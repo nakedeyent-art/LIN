@@ -13,10 +13,6 @@ const Athlete = () => (
       <Stat label="Estimated NIL value" value={`$${athlete.nilValue.toLocaleString()}`} hint="Based on reach, performance, local market" />
       <Stat label="Followers" value={`${(athlete.followers / 1000).toFixed(1)}K`} />
     </Card>
-    <Card title="Open Deal Offers">
-      <List items={[<>Local Dealership — $1,500 <Badge tone="yellow">Needs parent approval</Badge></>,
-        <>Sneaker Brand ambassador — $4,000 <Badge tone="gray">Under review</Badge></>]} />
-    </Card>
     <Card title="Today">
       <List items={["Training: Deceleration session (Phase 3 next)", "Study block: 45 min — Core Math", "Log lunch & pre-practice meal"]} />
     </Card>
@@ -31,9 +27,6 @@ const Athlete = () => (
 
 const Parent = () => (
   <Grid>
-    <Card title="Deals Awaiting Your Approval">
-      <List items={[<>Local Dealership — $1,500 · 12 months <Badge tone="yellow">Review contract</Badge></>]} />
-    </Card>
     <Card title="Eligibility & Academics">
       <Stat label="Core Math" value="74%" hint="Yellow alert — threshold at risk" />
       <Stat label="Study this week" value={`${studyLog.minutesThisWeek} min`} />

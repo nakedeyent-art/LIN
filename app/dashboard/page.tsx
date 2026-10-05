@@ -4,6 +4,9 @@ import { RoleDashboard } from "@/components/dashboards";
 import { guardianState, linkedAthletes } from "@/lib/guardians";
 import { Card, Grid, List } from "@/components/ui";
 import { resendGuardianInvite } from "../guardian/actions";
+import Link from "next/link";
+import { listDeals } from "@/lib/dealsdb";
+import { DealTable } from "@/components/deal-ui";
 
 export default async function DashboardHome({ searchParams }: { searchParams: Promise<{ linked?: string; invite?: string }> }) {
   const s = await requireUser();
@@ -11,6 +14,8 @@ export default async function DashboardHome({ searchParams }: { searchParams: Pr
   const cfg = ROLES[s.role];
   const g = s.role === "athlete" ? await guardianState(s.userId) : null;
   const kids = s.role === "parent" ? await linkedAthletes(s.userId) : [];
+  const dealRoles = ["athlete", "parent", "sponsor", "booster", "gym_owner"];
+  const deals = dealRoles.includes(s.role) ? await listDeals(s.userId) : null;
   const inviteMsg = { sent: "Invite re-sent.", wait: "Please wait a minute before re-sending.", error: "Couldn't send the invite. Try again shortly." }[q.invite ?? ""];
   return (
     <>
@@ -30,6 +35,12 @@ export default async function DashboardHome({ searchParams }: { searchParams: Pr
       {s.role === "parent" && (
         <Grid><Card title="My Athletes" wide>
           {kids.length ? <List items={kids.map((k) => `${k.name}${k.sport ? ` — ${k.sport}` : ""}`)} /> : <p className="muted">No athletes linked yet. Athletes link you by sending an invite to your email.</p>}
+        </Card></Grid>
+      )}
+      {deals && (
+        <Grid><Card title="Deals" wide>
+          <DealTable deals={deals.slice(0, 5)} viewerId={s.userId} role={s.role} />
+          <p><Link href="/dashboard/deals" style={{ textDecoration: "underline" }}>All deals →</Link></p>
         </Card></Grid>
       )}
       <div style={{ height: 16 }} />
