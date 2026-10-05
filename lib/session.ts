@@ -7,7 +7,7 @@ import { ROLES, type Role } from "./roles";
 export const COOKIE = "lin_session";
 const SESSION_DAYS = 7;
 
-export type Session = { userId: string; name: string; email: string; role: Role };
+export type Session = { userId: string; name: string; email: string; role: Role; emailVerified: boolean };
 
 export async function createSession(userId: string): Promise<void> {
   const token = newSessionToken();
@@ -33,18 +33,25 @@ export async function getSession(): Promise<Session | null> {
   const token = (await cookies()).get(COOKIE)?.value;
   if (!token) return null;
   const { rows } = await db().query(
-    `SELECT u.id, u.full_name, u.email, u.role FROM sessions s JOIN users u ON u.id = s.user_id
+    `SELECT u.id, u.full_name, u.email, u.role, u.email_verified_at IS NOT NULL AS verified FROM sessions s JOIN users u ON u.id = s.user_id
      WHERE s.token_hash = $1 AND s.expires_at > NOW()`,
     [hashToken(token)],
   );
   const r = rows[0];
-  return r ? { userId: r.id, name: r.full_name, email: r.email, role: r.role as Role } : null;
+  return r ? { userId: r.id, name: r.full_name, email: r.email, role: r.role as Role, emailVerified: r.verified } : null;
 }
 
-/** Route guard: signed in, and the page is in the role's nav. */
-export async function requireAccess(href: string): Promise<Session> {
+/** Signed in with a verified email, else redirect. */
+export async function requireUser(): Promise<Session> {
   const s = await getSession();
   if (!s) redirect("/login");
+  if (!s.emailVerified) redirect("/verify-email");
+  return s;
+}
+
+/** Route guard: verified user, and the page is in the role's nav. */
+export async function requireAccess(href: string): Promise<Session> {
+  const s = await requireUser();
   if (!ROLES[s.role].nav.some((n) => n.href === href)) notFound();
   return s;
 }

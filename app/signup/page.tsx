@@ -1,13 +1,16 @@
 import Link from "next/link";
+import { safeNext } from "@/lib/redirect";
 import { ROLE_LIST } from "@/lib/roles";
 import { signup } from "../login/actions";
 
-export default async function SignupPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
-  const { error } = await searchParams;
+export default async function SignupPage({ searchParams }: { searchParams: Promise<{ error?: string; next?: string; verified?: string }> }) {
+  const { error, next, verified } = await searchParams;
   return (
     <form className="center" action={signup}>
       <h1>Create account</h1>
+      {verified && <p className="ok">Email confirmed. Log in to continue.</p>}
       {error && <p role="alert" className="error">{error}</p>}
+      <input type="hidden" name="next" value={safeNext(next)} />
       <p><input type="text" name="name" placeholder="Full name" autoComplete="name" required /></p>
       <p><input type="email" name="email" placeholder="Email" autoComplete="email" required /></p>
       <p><input type="password" name="password" placeholder="Password (10+ characters)" autoComplete="new-password" minLength={10} required /></p>
@@ -33,7 +36,7 @@ export default async function SignupPage({ searchParams }: { searchParams: Promi
         </select>
       </fieldset>
       <button className="btn" type="submit">Sign up</button>
-      <p className="muted">Have an account? <Link href="/login" style={{ textDecoration: "underline" }}>Log in</Link></p>
+      <p className="muted">Have an account? <Link href={`/login?next=${encodeURIComponent(safeNext(next))}`} style={{ textDecoration: "underline" }}>Log in</Link></p>
     </form>
   );
 }

@@ -6,6 +6,8 @@ import {
 } from "@/lib/crypto";
 import { createSession, destroySession } from "@/lib/session";
 import { isRole } from "@/lib/roles";
+import { safeNext } from "@/lib/redirect";
+import { sendGuardianInvite, sendVerificationEmail } from "@/lib/verification";
 
 const MAX_FAILS = 5;
 const LOCK_MINUTES = 15;
@@ -13,9 +15,11 @@ const LOCK_MINUTES = 15;
 const DUMMY_HASH = "scrypt$16384$8$1$AAAAAAAAAAAAAAAAAAAAAA==$" + Buffer.alloc(64).toString("base64");
 
 const str = (f: FormData, k: string) => String(f.get(k) ?? "").trim();
-const fail = (path: string, msg: string): never => redirect(`${path}?error=${encodeURIComponent(msg)}`);
+const failWithNext = (path: string, msg: string, next?: string): never =>
+  redirect(`${path}?error=${encodeURIComponent(msg)}${next ? `&next=${encodeURIComponent(next)}` : ""}`);
 
 export async function login(formData: FormData) {
+  const next = safeNext(str(formData, "next"));
   const email = normalizeEmail(str(formData, "email"));
   const password = String(formData.get("password") ?? "");
   const { rows } = await db().query(
@@ -30,15 +34,17 @@ export async function login(formData: FormData) {
            locked_until = CASE WHEN failed_logins + 1 >= $2 THEN NOW() + make_interval(mins => $3) ELSE locked_until END
          WHERE id = $1`, [u.id, MAX_FAILS, LOCK_MINUTES]);
     }
-    fail("/login", locked ? "Too many attempts. Try again in 15 minutes." : "Invalid email or password.");
+    failWithNext("/login", locked ? "Too many attempts. Try again in 15 minutes." : "Invalid email or password.", next);
   }
   await db().query("UPDATE users SET failed_logins = 0, locked_until = NULL WHERE id = $1", [u.id]);
   await createSession(u.id);
-  redirect("/dashboard");
+  redirect(next);
 }
 
 export async function signup(formData: FormData) {
   const P = "/signup";
+  const next = safeNext(str(formData, "next"));
+  const fail = (path: string, msg: string): never => failWithNext(path, msg, next);
   const email = normalizeEmail(str(formData, "email"));
   const name = str(formData, "name").slice(0, 80);
   const role = str(formData, "role");
@@ -68,6 +74,7 @@ export async function signup(formData: FormData) {
   const hash = await hashPassword(password);
   const client = await db().connect();
   let userId: string;
+  let inviteId: string | null = null;
   try {
     await client.query("BEGIN");
     const ins = await client.query(
@@ -79,7 +86,7 @@ export async function signup(formData: FormData) {
         "INSERT INTO athlete_profiles(user_id, sport, position, level, birth_date) VALUES ($1,$2,$3,$4,$5)",
         [userId, sport, position || null, (age as number) < 18 ? "high_school" : "college", birth]);
       if ((age as number) < 18) {
-        await client.query("INSERT INTO guardian_invites(athlete_id, guardian_email) VALUES ($1,$2)", [userId, guardianEmail]);
+        inviteId = (await client.query("INSERT INTO guardian_invites(athlete_id, guardian_email) VALUES ($1,$2) RETURNING id", [userId, guardianEmail])).rows[0].id;
       }
     }
     if (role === "manager") {
@@ -94,7 +101,10 @@ export async function signup(formData: FormData) {
     client.release();
   }
   await createSession(userId);
-  redirect("/dashboard");
+  // Mail failures must not block signup; both can be re-sent from the app.
+  try { await sendVerificationEmail(userId, true); } catch (e) { console.error("verification email failed", e); }
+  if (inviteId) { try { await sendGuardianInvite(inviteId); } catch (e) { console.error("guardian invite failed", e); } }
+  redirect("/verify-email" + (next !== "/dashboard" ? `?next=${encodeURIComponent(next)}` : ""));
 }
 
 export async function logout() {

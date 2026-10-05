@@ -1,12 +1,10 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
-import { getSession } from "@/lib/session";
+import { requireUser } from "@/lib/session";
 import { ROLES } from "@/lib/roles";
 import { logout } from "../login/actions";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const s = await getSession();
-  if (!s) redirect("/login");
+  const s = await requireUser();
   const cfg = ROLES[s.role];
   return (
     <div className="shell" style={{ ["--accent" as string]: cfg.accent }}>
