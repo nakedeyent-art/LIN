@@ -67,9 +67,12 @@ export async function signup(formData: FormData) {
     if (!sport) fail(P, "Sport is required for athletes.");
     if ((age as number) < 18 && !isValidEmail(guardianEmail)) fail(P, "Athletes under 18 need a parent/guardian email.");
   }
+  const credential = str(formData, "credential_type").slice(0, 80);
   if (role === "manager" && !["marketing_agent", "certified_strength_coach", "mentor"].includes(declared)) {
     fail(P, "Managers must declare their professional role.");
   }
+  if (role === "manager" && declared === "certified_strength_coach" && !credential) fail(P, "Enter your certification (e.g. CSCS).");
+  if (role === "trainer" && !credential) fail(P, "Trainers must enter their certification (e.g. CSCS, NASM).");
 
   const hash = await hashPassword(password);
   const client = await db().connect();
@@ -89,8 +92,10 @@ export async function signup(formData: FormData) {
         inviteId = (await client.query("INSERT INTO guardian_invites(athlete_id, guardian_email) VALUES ($1,$2) RETURNING id", [userId, guardianEmail])).rows[0].id;
       }
     }
-    if (role === "manager") {
-      await client.query("INSERT INTO manager_declarations(manager_id, declared_role) VALUES ($1,$2)", [userId, declared]);
+    // Managers and trainers both declare their professional capacity. Credentials are self-declared (unverified).
+    if (role === "manager" || role === "trainer") {
+      await client.query("INSERT INTO manager_declarations(manager_id, declared_role, credential_type) VALUES ($1,$2,$3)",
+        [userId, role === "trainer" ? "certified_strength_coach" : declared, credential || null]);
     }
     await client.query("COMMIT");
   } catch (e) {

@@ -27,13 +27,14 @@ export default async function SignupPage({ searchParams }: { searchParams: Promi
         <p><input type="email" name="guardian_email" placeholder="Parent/guardian email (required if under 18)" /></p>
       </fieldset>
       <fieldset className="extra">
-        <legend>Managers only — declare your capacity</legend>
+        <legend>Managers &amp; trainers — declare your capacity</legend>
         <select name="declared_role" defaultValue="">
           <option value="">Select…</option>
           <option value="marketing_agent">Marketing Agent</option>
           <option value="certified_strength_coach">Certified Strength Coach</option>
           <option value="mentor">Mentor</option>
         </select>
+        <p><input type="text" name="credential_type" placeholder="Certification (e.g. CSCS) — required for trainers and certified coaches" /></p>
       </fieldset>
       <button className="btn" type="submit">Sign up</button>
       <p className="muted">Have an account? <Link href={`/login?next=${encodeURIComponent(safeNext(next))}`} style={{ textDecoration: "underline" }}>Log in</Link></p>

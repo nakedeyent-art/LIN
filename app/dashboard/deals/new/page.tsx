@@ -1,12 +1,13 @@
 import { notFound } from "next/navigation";
 import { requireAccess } from "@/lib/session";
 import { db } from "@/lib/db";
-import { displayName } from "@/lib/deals";
+import { displayName, OFFER_ROLES } from "@/lib/deals";
 import { Disclaimer } from "@/components/ui";
 import { createOffer } from "../actions";
 
 export default async function NewOffer({ searchParams }: { searchParams: Promise<{ athlete?: string; error?: string }> }) {
-  await requireAccess("/dashboard/athletes");
+  const s = await requireAccess("/dashboard/athletes");
+  if (!OFFER_ROLES.includes(s.role)) notFound();
   const { athlete, error } = await searchParams;
   if (!athlete || !/^[0-9a-f-]{36}$/i.test(athlete)) notFound();
   const a = (await db().query(

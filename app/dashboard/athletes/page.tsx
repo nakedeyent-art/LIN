@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireAccess } from "@/lib/session";
 import { db } from "@/lib/db";
 import { canOffer, displayName, type Level } from "@/lib/deals";
+import { trackAthlete } from "./actions";
 import { Card, Disclaimer, Grid } from "@/components/ui";
 
 export default async function Athletes({ searchParams }: { searchParams: Promise<{ sport?: string }> }) {
@@ -34,12 +35,14 @@ export default async function Athletes({ searchParams }: { searchParams: Promise
                 <td>{displayName(a.full_name, a.minor)}</td>
                 <td>{a.sport}{a.position ? ` · ${a.position}` : ""}{a.state ? ` · ${a.state}` : ""}</td>
                 <td>{String(a.level).replace("_", " ")}{a.grad_year ? ` (${a.grad_year})` : ""}</td>
-                <td>{ok.ok ? <Link className="btn" href={`/dashboard/deals/new?athlete=${a.id}`}>Make offer</Link> : <span className="muted">Not available to your role</span>}</td>
+                <td>{s.role === "recruiter"
+                  ? <form action={trackAthlete}><input type="hidden" name="athlete_id" value={a.id} /><button className="btn" type="submit">Track</button></form>
+                  : ok.ok ? <Link className="btn" href={`/dashboard/deals/new?athlete=${a.id}`}>Make offer</Link> : <span className="muted">Not available to your role</span>}</td>
               </tr>;
             })}
           </tbody></table>)}
       </Card></Grid>
-      <Disclaimer>Athletes under 18 need a parent/guardian to approve any deal; offers to them are held until that happens.</Disclaimer>
+      <Disclaimer>{s.role === "recruiter" ? "Academic details appear on your board only for athletes who invited you and chose to share them." : "Athletes under 18 need a parent/guardian to approve any deal; offers to them are held until that happens."}</Disclaimer>
     </>
   );
 }

@@ -35,13 +35,28 @@ npm run typecheck
   append-only `deal_events` audit trail, and emailed (links only, never amounts)
 - Privacy: athletes are unlisted by default; minors can only be listed once a guardian is linked; sponsors see
   sport/position/level and a minor's name as "First L."; email and birth date are never exposed
-- 10 distinct role dashboards (`components/dashboards.tsx`)
+- 10 distinct role dashboards (`components/dashboards.tsx`), every number computed from the database; where there's no data yet they show honest empty states with a next step (no placeholder figures remain — metrics with no real source, like follower counts or NIL value estimates, were removed rather than faked)
 - Role-gated nav and routes (`lib/roles.ts`, `requireAccess` in `lib/session.ts`)
-- Development modules: Academics, Nutrition, Training, Compliance (`app/dashboard/*`)
+- Team & consent (`app/dashboard/team`, `lib/access.ts`): an adult athlete — or, for a minor, a linked guardian — invites
+  a coach/trainer/manager/recruiter by email and chooses exactly what they see (academics and/or nutrition+training).
+  Accepting needs a verified account whose email **and role** match. `lib/access.ts` is the single authorization source:
+  athletes see themselves, guardians see linked athletes, everyone else only what a relationship row grants;
+  access can be removed instantly
+- Academics: athletes enter grades and study sessions; guardians/managers verify study time (never the athlete);
+  trends, yellow/red alerts and the weekend-competition gate are computed from real entries
+- Nutrition: athlete/guardian saves body details; targets are computed by formula from a performance profile
+  (nobody types calorie numbers, so the minor floor of BMR always holds); credentialed trainers / certified-coach
+  managers may set the profile; athletes log meals; 14-day compliance (calories ±10%, protein ≥ 90%)
+- Training: trainers and certified-coach managers prescribe structured workouts to connected athletes; the in-season
+  high-school rule is enforced **server-side**; athletes check off exercises on the day (adherence = share done);
+  past unfinished workouts count as missed; 2+ missed in a week raises an alert
+- Events (tournament managers) and a recruiting board (recruiters track listed athletes; academics appear only if the
+  family invited them and chose to share)
+- Compliance page (`app/dashboard/compliance`)
 - Tested domain rules in `lib/calc.ts`: BMR/macros (no sub-BMR for minors), grade alerts, eligibility gate,
   missed-session alert, in-season high-school training restriction
 - Postgres schema in `db/migrations/001_init.sql`
-- Identity, guardian links and deals are real; the remaining dashboard and development-module content is still mock (`lib/mock.ts`)
+- All product data is real and database-backed; there is no mock data left in the app
 
 ## Known gaps (do before real users)
 - **Password reset** is not built (the email plumbing for it now exists). Set `APP_URL`, `RESEND_API_KEY` and
@@ -56,9 +71,18 @@ npm run typecheck
   row-level security driven by `athlete_relationships` consent flags as defense in depth.
 - Manager credentials are self-declared; `credential_verified` stays false until a verification flow exists.
 
+- Study-session proof is a verification click by a guardian/manager; photo/document upload (needs object storage),
+  school-system sync (Canvas/PowerSchool) and wearable sync aren't built. Meal logging is manual (no photo AI).
+- Credentials (CSCS etc.) are self-declared and unverified — shown as such everywhere; there is no admin/verification
+  flow, and nobody is treated as a Registered Dietitian yet.
+- Dates use UTC (no per-user time zones); athletes can only complete a workout on its scheduled UTC day.
+- No gym facility, team-registration, brackets, campaign-budget or collective-fund features — those dashboards show
+  only what's real (deal pipeline, event listings).
+- Dashboard rollups run a few batched queries per page load; fine for hundreds of athletes per viewer, not thousands.
+
 ## Next steps
 1. Password reset; guardian management (add/revoke, turning-18 consent transfer)
-2. Replace remaining mock data with DB reads/writes per role (sponsor/booster/recruiter dashboards, academics, nutrition, training); messaging; payments + e-sign for deals
+2. Messaging; payments + e-sign for deals; credential verification / admin tooling; file uploads for proof of study and form videos
 3. SIS integrations (Canvas, Google Classroom, PowerSchool), OCR transcript upload
 4. Wearable sync (Apple Health, Health Connect, WHOOP); AI food-photo macros
 5. Video: guided drills, form-video upload and annotation
