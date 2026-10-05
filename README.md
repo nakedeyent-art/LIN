@@ -19,6 +19,12 @@ npm run typecheck
 - Real auth: email + password sign-up/login, scrypt hashing, 7-day server-side sessions (only a SHA-256 of the
   cookie token is stored; httpOnly, SameSite=Lax, Secure in production), logout invalidates server-side,
   lockout after 5 failed logins (15 min), uniform login errors and timing for unknown emails
+- Password reset (`/forgot-password`, `/reset-password`): the request page answers identically whether or not the
+  email has an account (lookup + send run after the response, so timing doesn't leak it); links are single-use,
+  expire in 1 hour, are stored hashed, and only *display* a form on GET (spent on the POST); per-account cooldown
+  (1/min) and cap (5/hour). Resetting ends **all** sessions, clears any lockout, voids other outstanding reset
+  links, marks the email verified (the person just proved mailbox control), and emails a "password was changed"
+  notice. One shared password policy (`lib/password-policy.ts`) applies to signup and reset
 - Email verification: a verified email is required before any dashboard page. Tokens are random, stored hashed,
   single-use, expire in 24h; the emailed link only shows a confirm button (the POST consumes the token, so link
   scanners can't burn it); resend is rate-limited to once a minute
@@ -59,15 +65,14 @@ npm run typecheck
 - All product data is real and database-backed; there is no mock data left in the app
 
 ## Known gaps (do before real users)
-- **Password reset** is not built (the email plumbing for it now exists). Set `APP_URL`, `RESEND_API_KEY` and
-  `MAIL_FROM` for production; in production the app refuses to send without them (dev mode logs emails instead).
+- Set `APP_URL`, `RESEND_API_KEY` and `MAIL_FROM` for production; in production the app refuses to send without them (dev mode logs emails instead).
 - Guardian links are one-to-one by email; there is no flow yet to add a second guardian, revoke a guardian, or
   re-link when an athlete turns 18 (consent should transfer to the athlete).
 - Deals: no payment processing, e-signature or contract storage (the app records decisions, not a signed
   agreement); no counter-offers/edits (withdraw and re-offer); active deals can't be cancelled in-app; managers/agents
   can't act for athletes yet; the booster-to-high-school ban and other offer rules in `canOffer` are conservative
   defaults that need per-state legal review; no admin tooling to see/resolve disputed deals.
-- No IP rate limiting, no MFA. Authorization is enforced in app code (`requireAccess`); consider Postgres
+- No IP-level rate limiting (login, signup and reset are limited per account only), no MFA, no "change password" or "change email" while signed in. Authorization is enforced in app code (`requireAccess`); consider Postgres
   row-level security driven by `athlete_relationships` consent flags as defense in depth.
 - Manager credentials are self-declared; `credential_verified` stays false until a verification flow exists.
 
@@ -81,7 +86,7 @@ npm run typecheck
 - Dashboard rollups run a few batched queries per page load; fine for hundreds of athletes per viewer, not thousands.
 
 ## Next steps
-1. Password reset; guardian management (add/revoke, turning-18 consent transfer)
+1. Account settings (change password/email, delete account); guardian management (add/revoke, turning-18 consent transfer)
 2. Messaging; payments + e-sign for deals; credential verification / admin tooling; file uploads for proof of study and form videos
 3. SIS integrations (Canvas, Google Classroom, PowerSchool), OCR transcript upload
 4. Wearable sync (Apple Health, Health Connect, WHOOP); AI food-photo macros

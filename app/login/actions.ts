@@ -2,11 +2,12 @@
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import {
-  ageFromBirthDate, hashPassword, isValidEmail, MIN_PASSWORD_LENGTH, normalizeEmail, verifyPassword,
+  ageFromBirthDate, hashPassword, isValidEmail, normalizeEmail, verifyPassword,
 } from "@/lib/crypto";
 import { createSession, destroySession } from "@/lib/session";
 import { isRole } from "@/lib/roles";
 import { safeNext } from "@/lib/redirect";
+import { validateNewPassword } from "@/lib/password-policy";
 import { sendGuardianInvite, sendVerificationEmail } from "@/lib/verification";
 
 const MAX_FAILS = 5;
@@ -51,7 +52,8 @@ export async function signup(formData: FormData) {
   const password = String(formData.get("password") ?? "");
   if (!name) fail(P, "Name is required.");
   if (!isValidEmail(email)) fail(P, "Enter a valid email.");
-  if (password.length < MIN_PASSWORD_LENGTH) fail(P, `Password must be at least ${MIN_PASSWORD_LENGTH} characters.`);
+  const pwError = validateNewPassword(password, email);
+  if (pwError) fail(P, pwError);
   if (!isRole(role)) fail(P, "Choose a role.");
 
   const sport = str(formData, "sport");
