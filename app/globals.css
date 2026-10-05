@@ -31,3 +31,7 @@ input[type=text] { width:100%; padding:10px; border-radius:8px; border:1px solid
 .phase { display:flex; justify-content:space-between; padding:10px 12px; border:1px solid var(--line); border-radius:8px; margin-bottom:8px; }
 .phase.locked { opacity:.45; }
 @media (max-width:700px){ .shell{flex-direction:column} .side{width:auto} .roles{grid-template-columns:1fr} }
+.error { color:#fca5a5; background:#3b1212; border:1px solid #7f1d1d; padding:8px 12px; border-radius:8px; }
+.extra { border:1px solid var(--line); border-radius:8px; margin:12px 0; } .extra legend { color:var(--muted); font-size:13px; }
+select, input[type=email], input[type=password], input[type=date] { padding:10px; border-radius:8px; border:1px solid var(--line); background:var(--panel); color:var(--text); }
+input[type=email], input[type=password] { width:100%; }

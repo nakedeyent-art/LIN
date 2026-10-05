@@ -1,25 +1,47 @@
 import { cookies } from "next/headers";
-import { isRole, type Role } from "./roles";
+import { notFound, redirect } from "next/navigation";
+import { db } from "./db";
+import { hashToken, newSessionToken } from "./crypto";
+import { ROLES, type Role } from "./roles";
 
-/**
- * DEMO SESSION ONLY: a plain cookie holding the chosen role.
- * Replace with real auth (Auth.js / Supabase Auth) + the `users`/`memberships`
- * tables in db/schema.sql before any real data is handled.
- */
-export type Session = { name: string; role: Role };
+export const COOKIE = "lin_session";
+const SESSION_DAYS = 7;
 
-export async function getSession(): Promise<Session | null> {
-  const jar = await cookies();
-  const role = jar.get("lin_role")?.value;
-  const name = jar.get("lin_name")?.value;
-  if (!isRole(role) || !name) return null;
-  return { role, name };
+export type Session = { userId: string; name: string; email: string; role: Role };
+
+export async function createSession(userId: string): Promise<void> {
+  const token = newSessionToken();
+  await db().query(
+    "INSERT INTO sessions(token_hash, user_id, expires_at) VALUES ($1,$2, NOW() + make_interval(days => $3))",
+    [hashToken(token), userId, SESSION_DAYS],
+  );
+  (await cookies()).set(COOKIE, token, {
+    httpOnly: true, sameSite: "lax", path: "/",
+    secure: process.env.NODE_ENV === "production",
+    maxAge: SESSION_DAYS * 86400,
+  });
 }
 
-import { notFound, redirect } from "next/navigation";
-import { ROLES } from "./roles";
+export async function destroySession(): Promise<void> {
+  const jar = await cookies();
+  const token = jar.get(COOKIE)?.value;
+  if (token) await db().query("DELETE FROM sessions WHERE token_hash = $1", [hashToken(token)]);
+  jar.delete(COOKIE);
+}
 
-/** Route guard: the page is only reachable if it's in the role's nav. */
+export async function getSession(): Promise<Session | null> {
+  const token = (await cookies()).get(COOKIE)?.value;
+  if (!token) return null;
+  const { rows } = await db().query(
+    `SELECT u.id, u.full_name, u.email, u.role FROM sessions s JOIN users u ON u.id = s.user_id
+     WHERE s.token_hash = $1 AND s.expires_at > NOW()`,
+    [hashToken(token)],
+  );
+  const r = rows[0];
+  return r ? { userId: r.id, name: r.full_name, email: r.email, role: r.role as Role } : null;
+}
+
+/** Route guard: signed in, and the page is in the role's nav. */
 export async function requireAccess(href: string): Promise<Session> {
   const s = await getSession();
   if (!s) redirect("/login");

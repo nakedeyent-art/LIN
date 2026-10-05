@@ -1,15 +1,28 @@
--- LIN NIL ecosystem: PostgreSQL schema (Postgres 13+, gen_random_uuid built in)
+-- LIN NIL ecosystem: initial schema (Postgres 13+, gen_random_uuid built in)
 
 CREATE TYPE user_role AS ENUM ('athlete','parent','coach','trainer','gym_owner','sponsor',
   'booster','tournament_manager','recruiter','manager');
 
 CREATE TABLE users (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  email TEXT UNIQUE NOT NULL,
+  email TEXT UNIQUE NOT NULL CHECK (email = lower(email)),
   full_name TEXT NOT NULL,
   role user_role NOT NULL,
+  password_hash TEXT NOT NULL,            -- scrypt$N$r$p$salt$hash
+  failed_logins INT NOT NULL DEFAULT 0,
+  locked_until TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Server-side sessions. Only the SHA-256 of the cookie token is stored.
+CREATE TABLE sessions (
+  token_hash TEXT PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  expires_at TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX ON sessions (user_id);
+CREATE INDEX ON sessions (expires_at);
 
 -- Declared professional capacity (SPARTA / agent-law guardrail)
 CREATE TABLE manager_declarations (
@@ -29,6 +42,16 @@ CREATE TABLE athlete_profiles (
   birth_date DATE NOT NULL,
   grad_year INT,
   in_season BOOLEAN DEFAULT FALSE   -- Season Toggle
+);
+
+-- Guardian invite for minor athletes. Linking requires email verification (not built yet),
+-- so a pending invite grants NO access by itself.
+CREATE TABLE guardian_invites (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  athlete_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  guardian_email TEXT NOT NULL CHECK (guardian_email = lower(guardian_email)),
+  status VARCHAR(20) NOT NULL DEFAULT 'pending',
+  created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- Who may see/act for which athlete; consent gates data sharing

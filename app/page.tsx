@@ -9,7 +9,7 @@ export default function Landing() {
       <div className="roles">
         {ROLE_LIST.map((r) => <div key={r.id} className="card" style={{ ["--accent" as string]: r.accent }}><strong>{r.label}</strong><div className="muted">{r.tagline}</div></div>)}
       </div>
-      <Link className="btn" href="/login">Log in</Link>
+      <Link className="btn" href="/login">Log in</Link> <Link className="btn ghost" href="/signup">Sign up</Link>
     </div>
   );
 }
