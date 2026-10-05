@@ -7,24 +7,20 @@ import { ageFromBirthDate } from "@/lib/crypto";
 import { addDays, daysBetween, todayStr } from "@/lib/academics";
 import { ACTIVITY_LEVELS, buildTargets, PROFILES } from "@/lib/nutrition";
 import { canPrescribe } from "@/lib/training";
+import { parseBounded as num } from "@/lib/validation";
 import type { Profile } from "@/lib/calc";
 
 const str = (f: FormData, k: string) => String(f.get(k) ?? "").trim();
 const UUID = /^[0-9a-f-]{36}$/i;
 const back = (athlete: string | null, key: "msg" | "error", m: string): never =>
   redirect(`/dashboard/nutrition?${athlete ? `athlete=${athlete}&` : ""}${key}=${encodeURIComponent(m)}`);
-const num = (s: string, min: number, max: number, dec = 1) => {
-  if (!new RegExp(`^\\d{1,4}(\\.\\d{1,${dec}})?$`).test(s)) return null;
-  const n = parseFloat(s); return n >= min && n <= max ? n : null;
-};
-
 /** Metrics are the athlete's own data: editable by the athlete or a linked guardian, no one else. */
 export async function saveMetrics(formData: FormData) {
   const s = await requireAccess("/dashboard/nutrition");
   const athleteId = str(formData, "athlete_id");
   const sub = UUID.test(athleteId) ? await subjectFor(s, athleteId) : null;
   if (!sub || !["self", "parent"].includes(sub.relationship)) back(null, "error", "You can't edit these details.");
-  const h = num(str(formData, "height_cm"), 100, 250), w = num(str(formData, "weight_kg"), 25, 250);
+  const h = num(str(formData, "height_cm"), 100, 250, 1), w = num(str(formData, "weight_kg"), 25, 250, 1);
   const sex = str(formData, "sex"), act = parseFloat(str(formData, "activity_factor"));
   if (h === null) back(sub!.id, "error", "Height must be 100–250 cm.");
   if (w === null) back(sub!.id, "error", "Weight must be 25–250 kg.");
