@@ -30,6 +30,13 @@ npm run typecheck
   keep sharing academics and/or nutrition+training with a parent (**view-only**, revocable, never deals), or remove the
   link. A deal that was awaiting a guardian when the athlete turned 18 is decided by the athlete. Adulthood is evaluated
   from birth date at query time (no job needed)
+- Scheduled jobs (`lib/jobs/*`, `GET|POST /api/cron/daily`): a small runner with the **18th-birthday transition** as its first
+  job. For each athlete who has turned 18 it voids guardian invites that can no longer be accepted, writes a guardian-audit
+  entry, and emails the athlete and each former guardian (names and counts only — no amounts or addresses). It never emails
+  someone who joined already 18+, whose birthday was more than 30 days ago, or who never had a guardian. It's idempotent
+  (`athlete_profiles.adult_notice_sent_at`), single-flight (Postgres advisory lock; overlapping triggers return
+  `skipped_locked`), retries failed deliveries up to 5 times then gives up, supports `?dry=1`, and records each run in
+  `job_runs`. The endpoint needs `CRON_SECRET` (≥16 chars) as a Bearer token and returns 503 if it isn't set
 - Account settings (`/dashboard/settings`): edit name (athletes: sport/position/state/grad year); change password
   (re-enter current one; ends other devices; wrong attempts feed the same lockout as login); change email (needs the
   password, link goes to the **new** address and only works for the **same logged-in account**, the old address gets a
@@ -85,6 +92,18 @@ npm run typecheck
 - Postgres schema in `db/migrations/001_init.sql`
 - All product data is real and database-backed; there is no mock data left in the app
 
+## Scheduling the jobs
+Set `CRON_SECRET` (e.g. `openssl rand -hex 32`) and have *any* scheduler call the endpoint once a day:
+```
+curl -fsS -X POST -H "Authorization: Bearer $CRON_SECRET" https://your-app.example/api/cron/daily          # real run
+curl -fsS -X POST -H "Authorization: Bearer $CRON_SECRET" "https://your-app.example/api/cron/daily?dry=1"  # preview only
+```
+- **Vercel:** `vercel.json` already schedules it daily at 14:00 UTC; Vercel Cron sends the Bearer token automatically when
+  `CRON_SECRET` is set in the project's environment variables.
+- **Anywhere else:** a system cron entry, a GitHub Actions `schedule:` workflow, or your host's scheduler running the `curl` above.
+Dates are evaluated in UTC. Running it more often is harmless (idempotent); missing a few days is fine (the 30-day window
+catches up). Add new jobs to `JOBS` in `lib/jobs/runner.ts` — each must be idempotent and safe to retry.
+
 ## Known gaps (do before real users)
 - Set `APP_URL`, `RESEND_API_KEY` and `MAIL_FROM` for production; in production the app refuses to send without them (dev mode logs emails instead).
 - Guardian links are one-to-one by email; there is no flow yet to add a second guardian, revoke a guardian, or
@@ -96,7 +115,7 @@ npm run typecheck
 - No IP-level rate limiting (login, signup, reset and email change are limited per account only), no MFA.
 - Guardian identity is only as strong as email control — nothing verifies that a "parent" is actually the athlete's
   parent. Any one guardian can remove another (logged and emailed, but there's no dispute/custody process). The "you're
-  18" heads-up is an in-app notice for 30 days — there's no scheduler, so no email goes out on the birthday. Coaches,
+  18" email goes out when the daily job runs (so it needs scheduling, see above); guardian emails are best-effort and not retried. Coaches,
   trainers and managers a guardian added keep their access after the athlete turns 18 until the athlete removes them.
 - Account deletion keeps deal records (anonymized) and `deal_events` indefinitely; there's no retention schedule or
   admin/support tooling (e.g. fixing a wrong birth date, restoring an account, or a guardian deleting a minor's account).
@@ -114,7 +133,7 @@ npm run typecheck
 - Dashboard rollups run a few batched queries per page load; fine for hundreds of athletes per viewer, not thousands.
 
 ## Next steps
-1. Payments + e-signature for deals; messaging; a scheduled job (birthday emails, expiring invites/offers)
+1. Payments + e-signature for deals; messaging; more scheduled jobs (expiring offers/invites, session and token cleanup)
 2. Credential verification and admin/support tooling (disputes, restoring accounts); file uploads for proof of study and form videos
 3. SIS integrations (Canvas, Google Classroom, PowerSchool), OCR transcript upload
 4. Wearable sync (Apple Health, Health Connect, WHOOP); AI food-photo macros
