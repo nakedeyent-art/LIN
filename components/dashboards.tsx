@@ -6,7 +6,7 @@ import { subjectsFor } from "@/lib/access";
 import { snapshots, type Snapshot } from "@/lib/snapshot";
 import { listDeals } from "@/lib/dealsdb";
 import { grownAthletesOf } from "@/lib/guardians";
-import { displayName, formatCents } from "@/lib/deals";
+import { displayName, formatCents, isOpen } from "@/lib/deals";
 import { todayStr } from "@/lib/academics";
 import { Badge, Card, Grid, List, Stat } from "./ui";
 import { setStage, untrack } from "@/app/dashboard/athletes/actions";
@@ -146,7 +146,7 @@ async function Manager({ s }: { s: Session }) {
 async function DealPipeline({ s, title }: { s: Session; title: string }) {
   const deals = await listDeals(s.userId);
   const sum = (f: (d: (typeof deals)[number]) => boolean) => deals.filter(f).reduce((t, d) => t + d.amount_cents, 0);
-  const open = deals.filter((d) => d.status === "offered" || d.status === "guardian_review");
+  const open = deals.filter((d) => isOpen(d.status));
   return (
     <Grid>
       <Card title={title}>

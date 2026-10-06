@@ -2,14 +2,16 @@ import type { PoolClient } from "pg";
 import { db } from "./db";
 import { appUrl, sendMail } from "./mailer";
 import {
-  type Capacity, type DealAction, type DealContext, type DealStatus, STATUS_LABEL,
+  type Capacity, type DealContext, type DealStatus, STATUS_LABEL,
 } from "./deals";
+import { paymentsEnabled } from "./stripe";
 
 export type DealRow = {
   id: string; title: string; amount_cents: number; deliverables: string; status: DealStatus;
   expires_at: Date | null; created_at: Date; attested_at: Date | null;
   athlete_id: string; counterparty_id: string;
   athlete_name: string; athlete_minor: boolean; counterparty_name: string; counterparty_role: string;
+  signed_by_me?: boolean;
 };
 
 /** Visibility rule, in one place: the two parties and the athlete's linked guardians. */
@@ -21,7 +23,9 @@ const SELECT = `
   SELECT d.id, d.title, d.amount_cents::float8 AS amount_cents, d.deliverables, d.status, d.expires_at, d.created_at, d.attested_at,
          d.athlete_id, d.counterparty_id, a.full_name AS athlete_name,
          COALESCE(ap.birth_date > CURRENT_DATE - INTERVAL '18 years', FALSE) AS athlete_minor,
-         c.full_name AS counterparty_name, c.role AS counterparty_role
+         c.full_name AS counterparty_name, c.role AS counterparty_role,
+         EXISTS (SELECT 1 FROM contract_signatures s JOIN contracts k ON k.id = s.contract_id
+                  WHERE k.deal_id = d.id AND s.signer_user_id = $1) AS signed_by_me
     FROM deals d
     JOIN users a ON a.id = d.athlete_id
     LEFT JOIN athlete_profiles ap ON ap.user_id = d.athlete_id
@@ -59,12 +63,20 @@ export async function capacityOn(userId: string, d: Pick<DealRow, "athlete_id" |
   return r.rowCount ? "guardian" : null;
 }
 
+async function moneyState(dealId: string, c?: PoolClient) {
+  const r = (await (c ?? db()).query(
+    `SELECT d.cancel_requested_side AS side, EXISTS (SELECT 1 FROM deal_payments p WHERE p.deal_id = d.id AND p.status = 'funded') AS funded
+       FROM deals d WHERE d.id=$1`, [dealId])).rows[0];
+  return { funded: !!r?.funded, fundingRequired: paymentsEnabled(), cancelRequestSide: (r?.side ?? null) as "buyer" | "athlete_side" | null };
+}
+
 export async function dealContext(d: DealRow, c?: PoolClient): Promise<DealContext> {
   return {
     status: d.status,
     expired: !!d.expires_at && new Date(d.expires_at) < new Date(),
     athleteIsMinor: d.athlete_minor,
     athleteHasGuardian: d.athlete_minor ? await hasLinkedGuardian(d.athlete_id, c) : false,
+    ...(await moneyState(d.id, c)),
   };
 }
 

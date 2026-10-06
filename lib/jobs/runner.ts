@@ -1,5 +1,7 @@
 import { db } from "../db";
 import { runAdultTransition, type JobResult } from "./adult-transition";
+import { retryStuckPayments } from "../payments";
+import { paymentsEnabled } from "../stripe";
 
 const LOCK_KEY = 7_345_001;   // arbitrary app-wide advisory-lock id: only one run of the daily jobs at a time
 
@@ -10,6 +12,12 @@ export type RunSummary =
 /** Add new scheduled jobs here; each must be idempotent and safe to retry. */
 const JOBS: { name: string; run: (o: { dry: boolean }) => Promise<JobResult> }[] = [
   { name: "adult-transition", run: runAdultTransition },
+  // Finishes payouts/refunds that failed mid-way and reconciles checkouts whose webhook never arrived. Safe to retry: Stripe calls are idempotent.
+  { name: "payments-retry", run: async ({ dry }) => {
+      if (dry || !paymentsEnabled()) return { processed: 0, skipped: 0, failed: 0 };
+      const r = await retryStuckPayments();
+      return { processed: r.processed, skipped: 0, failed: r.failed };
+    } },
 ];
 
 /**

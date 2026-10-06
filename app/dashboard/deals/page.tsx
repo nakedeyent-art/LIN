@@ -2,26 +2,43 @@ import Link from "next/link";
 import { requireAccess } from "@/lib/session";
 import { listDeals } from "@/lib/dealsdb";
 import { db } from "@/lib/db";
-import { Card, Disclaimer, Grid } from "@/components/ui";
+import { Badge, Card, Disclaimer, Grid } from "@/components/ui";
+import { getPayoutAccount } from "@/lib/payments";
+import { paymentsEnabled } from "@/lib/stripe";
+import { startPayouts } from "./payment-actions";
 import { DealTable } from "@/components/deal-ui";
 import { setDiscoverable } from "./actions";
 
-export default async function DealsPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
+export default async function DealsPage({ searchParams }: { searchParams: Promise<{ error?: string; msg?: string }> }) {
   const s = await requireAccess("/dashboard/deals");
-  const { error } = await searchParams;
+  const { error, msg } = await searchParams;
   const deals = await listDeals(s.userId);
   const listed = s.role === "athlete"
     ? (await db().query("SELECT discoverable FROM athlete_profiles WHERE user_id=$1", [s.userId])).rows[0]?.discoverable as boolean | undefined
     : undefined;
+  const canPaid = paymentsEnabled() && (s.role === "parent"
+    ? !!(await db().query("SELECT 1 FROM guardian_links WHERE member_id=$1 LIMIT 1", [s.userId])).rowCount
+    : s.role === "athlete" && !!(await db().query("SELECT 1 FROM athlete_profiles WHERE user_id=$1 AND birth_date <= CURRENT_DATE - INTERVAL '18 years'", [s.userId])).rowCount);
+  const acct = canPaid ? await getPayoutAccount(s.userId) : null;
   const needs = deals.filter((d) =>
-    (s.role === "athlete" && d.status === "offered") || (s.role === "parent" && d.status === "guardian_review")).length;
+    (s.role === "athlete" && d.status === "offered") || (s.role === "parent" && d.status === "guardian_review") ||
+    (d.status === "awaiting_signature" && !d.signed_by_me && !(s.role === "athlete" && d.athlete_minor))).length;
   return (
     <>
       <h1>Deals</h1>
       <div className="tag">{s.role === "parent" ? "Approve or reject your athlete's deals." : s.role === "athlete" ? "Review offers. Under 18? A guardian must approve before a deal is active." : "Your offers and active deals."}</div>
+      {msg && <p className="ok">{msg}</p>}
       {error && <p role="alert" className="error">{error}</p>}
-      {needs > 0 && <p className="ok">{needs} deal{needs > 1 ? "s" : ""} waiting for your decision.</p>}
+      {needs > 0 && <p className="ok">{needs} deal{needs > 1 ? "s" : ""} waiting for your decision or signature.</p>}
       <Grid>
+        {canPaid && (
+          <Card title="Payouts" wide>
+            <p>{acct?.payoutsEnabled ? <Badge tone="green">Payouts ready</Badge> : acct ? <Badge tone="yellow">Setup unfinished</Badge> : <Badge tone="gray">Not set up</Badge>}{" "}
+              {s.role === "parent" ? "You receive payments for athletes you're guardian of, for their benefit." : "You receive payments for your deals."}</p>
+            <form action={startPayouts}><button className="btn" type="submit">{acct ? (acct.payoutsEnabled ? "Update payout details" : "Continue payout setup") : "Set up payouts"}</button></form>
+            <p className="muted">Identity and bank details are collected by Stripe, not stored here. Money for an athlete under 18 goes to a parent/guardian — custodial and tax rules vary by state.</p>
+          </Card>
+        )}
         {s.role === "athlete" && (
           <Card title="Sponsor visibility" wide>
             <p>{listed ? "You're listed — sponsors can find you and send offers." : "You're not listed. Sponsors can't find or approach you."}</p>

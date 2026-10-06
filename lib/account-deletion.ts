@@ -3,11 +3,21 @@ import type { PoolClient } from "pg";
 import { db } from "./db";
 import { unlistIfNoGuardian } from "./guardians";
 
-export const OPEN_DEAL_STATUSES = "('offered','guardian_review','active')";
+import { LIVE_STATUSES, sqlIn } from "./deals";
+import { MONEY_IN_FLIGHT } from "./payment-rules";
+
+export const OPEN_DEAL_STATUSES = sqlIn(LIVE_STATUSES);
 
 export async function openDealCount(userId: string): Promise<number> {
   return (await db().query(
     `SELECT count(*)::int AS n FROM deals WHERE (athlete_id=$1 OR counterparty_id=$1) AND status IN ${OPEN_DEAL_STATUSES}`, [userId])).rows[0].n;
+}
+
+/** Payments for deals this person is part of that are held or being processed (a deletion must wait for these). */
+export async function moneyInFlightCount(userId: string): Promise<number> {
+  return (await db().query(
+    `SELECT count(*)::int AS n FROM deal_payments p JOIN deals d ON d.id = p.deal_id
+      WHERE p.status IN ${sqlIn(MONEY_IN_FLIGHT)} AND (p.payee_user_id=$1 OR d.counterparty_id=$1 OR d.athlete_id=$1)`, [userId])).rows[0].n;
 }
 
 /**
@@ -39,6 +49,9 @@ export async function purgeAndAnonymize(client: PoolClient, id: string, email: s
   await run("DELETE FROM events WHERE organizer_id=$1");
   await run("DELETE FROM athlete_profiles WHERE user_id=$1");
   await run("DELETE FROM manager_declarations WHERE manager_id=$1");
+  await run("DELETE FROM payout_accounts WHERE user_id=$1");   // the Stripe account itself stays; we just forget the link
+  // Signed agreements are kept as records of the transaction (typed name + time + document hash); only the signer's network metadata is scrubbed.
+  await run("UPDATE contract_signatures SET ip=NULL, user_agent=NULL WHERE signer_user_id=$1");
   await client.query(
     `UPDATE users SET email=$2, full_name='Deleted user', password_hash=$3, failed_logins=0, locked_until=NULL,
             email_verified_at=NULL, deleted_at=NOW() WHERE id=$1`,

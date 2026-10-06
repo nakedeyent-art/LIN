@@ -4,8 +4,11 @@ import { db } from "@/lib/db";
 import { requireAccess, requireUser } from "@/lib/session";
 import {
   ALL_ACTIONS, applyAction, canOffer, type DealAction, type DealStatus, type Level, MAX_OPEN_OFFERS_PER_PAIR,
-  OFFER_TTL_DAYS, parseDollarsToCents,
+  OFFER_TTL_DAYS, OPEN_STATUSES, amountError, parseDollarsToCents, sideOf, sqlIn,
 } from "@/lib/deals";
+import { createContractForDeal, voidContract } from "@/lib/contractdb";
+import { notifyDealParties, refundPayment, releasePayment } from "@/lib/payments";
+import { paymentsEnabled, stripe } from "@/lib/stripe";
 import { capacityOn, dealContext, hasLinkedGuardian, notifyDeal, type DealRow } from "@/lib/dealsdb";
 
 const str = (f: FormData, k: string) => String(f.get(k) ?? "").trim();
@@ -22,6 +25,8 @@ export async function createOffer(formData: FormData) {
   if (title.length < 3 || title.length > 100) back("Title must be 3–100 characters.");
   if (deliverables.length < 20 || deliverables.length > 2000) back("Describe the deliverables in 20–2000 characters (what the athlete will do in return).");
   if (cents === null) back("Enter a valid amount between $0.01 and $1,000,000.");
+  const small = amountError(cents!, paymentsEnabled());
+  if (small) back(small);
   if (formData.get("attest") !== "on") back("You must confirm the compensation is for NIL deliverables only.");
 
   if (!/^[0-9a-f-]{36}$/i.test(athleteId)) back("Unknown athlete.");
@@ -35,7 +40,7 @@ export async function createOffer(formData: FormData) {
   if (!ok.ok) back(ok.error);
 
   const open = (await db().query(
-    `SELECT count(*)::int AS n FROM deals WHERE athlete_id=$1 AND counterparty_id=$2 AND status IN ('offered','guardian_review')`,
+    `SELECT count(*)::int AS n FROM deals WHERE athlete_id=$1 AND counterparty_id=$2 AND status IN ${sqlIn(OPEN_STATUSES)}`,
     [athleteId, s.userId])).rows[0].n;
   if (open >= MAX_OPEN_OFFERS_PER_PAIR) back(`You already have ${MAX_OPEN_OFFERS_PER_PAIR} open offers to this athlete.`);
 
@@ -62,7 +67,8 @@ export async function dealAction(formData: FormData) {
   if (!ALL_ACTIONS.includes(action) || !/^[0-9a-f-]{36}$/i.test(dealId)) redirect("/dashboard/deals");
 
   const client = await db().connect();
-  let newStatus: DealStatus;
+  let newStatus: DealStatus, oldStatus: DealStatus;
+  const afterCommit: (() => Promise<unknown>)[] = [];
   try {
     await client.query("BEGIN");
     // Lock the row so two concurrent decisions can't both pass the state check.
@@ -75,21 +81,55 @@ export async function dealAction(formData: FormData) {
          FROM deals d LEFT JOIN athlete_profiles ap ON ap.user_id = d.athlete_id WHERE d.id=$1`, [dealId])).rows[0] as DealRow;
     const who = await capacityOn(s.userId, d, client);
     if (!who) { await client.query("ROLLBACK"); redirect("/dashboard/deals"); } // no standing: behave as if it doesn't exist
-    const t = applyAction(await dealContext(d, client), who!, action);
+    const ctx = await dealContext(d, client);
+    const t = applyAction(ctx, who!, action);
     if (!t.ok) { await client.query("ROLLBACK"); return back(t.error); }
-    await client.query(
-      `UPDATE deals SET status=$2, updated_at=NOW(),
-         guardian_approved_by = CASE WHEN $3 THEN $4::uuid ELSE guardian_approved_by END WHERE id=$1`,
-      [dealId, t.status, action === "approve", s.userId]);
+    oldStatus = d.status; newStatus = t.status;
+    const side = sideOf(who!, ctx.athleteIsMinor);
+
+    if (action === "request_cancel") {
+      await client.query("UPDATE deals SET cancel_requested_side=$2, cancel_requested_by=$3, cancel_requested_at=NOW(), updated_at=NOW() WHERE id=$1", [dealId, side, s.userId]);
+    } else if (action === "withdraw_cancel") {
+      await client.query("UPDATE deals SET cancel_requested_side=NULL, cancel_requested_by=NULL, cancel_requested_at=NULL, updated_at=NOW() WHERE id=$1", [dealId]);
+    } else {
+      await client.query(
+        `UPDATE deals SET status=$2, updated_at=NOW(),
+           guardian_approved_by = CASE WHEN $3 THEN $4::uuid ELSE guardian_approved_by END,
+           cancel_requested_side=NULL, cancel_requested_by=NULL, cancel_requested_at=NULL WHERE id=$1`,
+        [dealId, t.status, action === "approve" && who === "guardian", s.userId]);
+
+      if (t.status === "awaiting_signature") {
+        // Freeze the terms into a contract. Money goes to the adult athlete, or to the approving guardian for a minor.
+        const payee = action === "approve" && who === "guardian" ? s.userId : d.athlete_id;
+        await client.query("UPDATE deals SET payee_user_id=$2, expires_at = NOW() + make_interval(days => $3) WHERE id=$1", [dealId, payee, OFFER_TTL_DAYS]);
+        await createContractForDeal(client, dealId);
+      }
+      if (oldStatus === "awaiting_signature" && (t.status === "declined" || t.status === "withdrawn")) await voidContract(client, dealId);
+
+      if (t.status === "cancelled") {
+        const funded = (await client.query("UPDATE deal_payments SET status='refunding', updated_at=NOW() WHERE deal_id=$1 AND status='funded' RETURNING id", [dealId])).rows[0];
+        if (funded) afterCommit.push(() => refundPayment(funded.id));
+        const pending = (await client.query("UPDATE deal_payments SET status='expired', updated_at=NOW() WHERE deal_id=$1 AND status='pending_checkout' RETURNING id, stripe_checkout_session_id AS sid", [dealId])).rows[0];
+        if (pending?.sid) afterCommit.push(() => stripe.expireCheckoutSession(pending.sid).catch(() => {}));   // best effort; a late payment is auto-refunded
+      }
+      if (t.status === "completed") {
+        const funded = (await client.query("UPDATE deal_payments SET status='releasing', updated_at=NOW() WHERE deal_id=$1 AND status='funded' RETURNING id", [dealId])).rows[0];
+        if (funded) afterCommit.push(() => releasePayment(funded.id));
+      }
+    }
     await client.query("INSERT INTO deal_events(deal_id, actor_id, action, from_status, to_status) VALUES ($1,$2,$3,$4,$5)",
       [dealId, s.userId, action, d.status, t.status]);
     await client.query("COMMIT");
-    newStatus = t.status;
   } catch (e) {
     await client.query("ROLLBACK").catch(() => {});
     throw e;
   } finally { client.release(); }
-  await notifyDeal(dealId, s.userId, newStatus);
+
+  if (action === "request_cancel" || action === "withdraw_cancel")
+    await notifyDealParties(dealId, action === "request_cancel" ? "A NIL deal cancellation was requested" : "A cancellation request was withdrawn",
+      action === "request_cancel" ? "One side asked to cancel and refund this funded deal. The other side needs to agree." : "The cancellation request was withdrawn; the deal continues.");
+  else await notifyDeal(dealId, s.userId, newStatus);
+  for (const job of afterCommit) { try { await job(); } catch (e) { console.error("post-commit step failed:", (e as Error).message); } }
   back("Updated.", "msg");
 }
 

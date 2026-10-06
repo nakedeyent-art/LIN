@@ -36,3 +36,5 @@ input[type=text] { width:100%; padding:10px; border-radius:8px; border:1px solid
 select, input[type=email], input[type=password], input[type=date] { padding:10px; border-radius:8px; border:1px solid var(--line); background:var(--panel); color:var(--text); }
 input[type=email], input[type=password] { width:100%; }
 .ok { color:#86efac; background:#0f2a1a; border:1px solid #166534; padding:8px 12px; border-radius:8px; }
+.contract { white-space:pre-wrap; background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:20px; font:14px/1.6 ui-serif,Georgia,serif; }
+@media print { .side, .btn, form { display:none !important; } body { background:#fff; color:#000; } .contract, .card { border:0; background:#fff; color:#000; } .main { padding:0; max-width:none; } }

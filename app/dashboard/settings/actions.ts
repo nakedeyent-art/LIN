@@ -8,7 +8,9 @@ import { validateNewPassword } from "@/lib/password-policy";
 import { DELETE_PHRASE, maskEmail, validateAthleteProfile, validateDisplayName } from "@/lib/account";
 import { destroySession, endOtherSessions, requireUser } from "@/lib/session";
 import { RESEND_COOLDOWN_SECONDS } from "@/lib/verification";
-import { purgeAndAnonymize } from "@/lib/account-deletion";
+import { openDealCount, purgeAndAnonymize } from "@/lib/account-deletion";
+import { LIVE_STATUSES, sqlIn } from "@/lib/deals";
+import { MONEY_IN_FLIGHT } from "@/lib/payment-rules";
 
 const str = (f: FormData, k: string) => String(f.get(k) ?? "").trim();
 const done = (key: "msg" | "error", m: string): never => redirect(`/dashboard/settings?${key}=${encodeURIComponent(m)}`);
@@ -91,15 +93,18 @@ export async function cancelEmailChange() {
   done("msg", "Pending email change cancelled.");
 }
 
-/** Open deals (either side) and, for guardians, linked minors' open deals — these must be resolved first. */
+/** Open deals (either side), money in flight, and — for guardians — linked minors' open deals must be resolved first. */
 async function deletionBlockers(userId: string, role: string): Promise<string | null> {
-  const mine = (await db().query(
-    "SELECT count(*)::int AS n FROM deals WHERE (athlete_id=$1 OR counterparty_id=$1) AND status IN ('offered','guardian_review','active')", [userId])).rows[0].n;
-  if (mine > 0) return `You have ${mine} open deal${mine > 1 ? "s" : ""} (offered, awaiting guardian, or active). Resolve ${mine > 1 ? "them" : "it"} first.`;
+  const mine = await openDealCount(userId);
+  if (mine > 0) return `You have ${mine} open deal${mine > 1 ? "s" : ""} (offered, awaiting signatures, or active). Resolve ${mine > 1 ? "them" : "it"} first.`;
+  const money = (await db().query(
+    `SELECT count(*)::int AS n FROM deal_payments p JOIN deals d ON d.id = p.deal_id
+      WHERE p.status IN ${sqlIn(MONEY_IN_FLIGHT)} AND (p.payee_user_id=$1 OR d.counterparty_id=$1 OR d.athlete_id=$1)`, [userId])).rows[0].n;
+  if (money > 0) return "A payment connected to you is still being held or processed. Wait for it to finish first.";
   if (role === "parent") {
     const kids = (await db().query(
       `SELECT count(*)::int AS n FROM deals d JOIN guardian_links r ON r.athlete_id = d.athlete_id
-        WHERE r.member_id=$1 AND d.status IN ('offered','guardian_review','active')`, [userId])).rows[0].n;
+        WHERE r.member_id=$1 AND d.status IN ${sqlIn(LIVE_STATUSES)}`, [userId])).rows[0].n;
     if (kids > 0) return "An athlete you're linked to has open deals that need a guardian. Resolve them first.";
   }
   return null;

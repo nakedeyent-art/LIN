@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { isValidEmail, normalizeEmail } from "@/lib/crypto";
 import { DELETE_PHRASE, maskEmail } from "@/lib/account";
-import { openDealCount, purgeAndAnonymize } from "@/lib/account-deletion";
+import { moneyInFlightCount, openDealCount, purgeAndAnonymize } from "@/lib/account-deletion";
 import { canInviteGuardian, checkRemoval } from "@/lib/guardianship";
 import { logGuardianEvent, unlistIfNoGuardian } from "@/lib/guardians";
 import { sendMail } from "@/lib/mailer";
@@ -116,6 +116,7 @@ export async function deleteMinorAccount(formData: FormData) {
   if (!pw.ok) done("error", pw.error);
   const deals = await openDealCount(athleteId);
   if (deals > 0) done("error", `This athlete has ${deals} open deal${deals > 1 ? "s" : ""}. Resolve ${deals > 1 ? "them" : "it"} first.`);
+  if (await moneyInFlightCount(athleteId)) done("error", "A payment for this athlete is still being held or processed. Wait for it to finish first.");
 
   const a = (await db().query("SELECT email, full_name FROM users WHERE id=$1", [athleteId])).rows[0];
   const guardians = (await db().query("SELECT u.email FROM guardian_links g JOIN users u ON u.id = g.member_id WHERE g.athlete_id=$1", [athleteId])).rows.map((r) => r.email as string);

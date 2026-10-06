@@ -1,13 +1,13 @@
 import Link from "next/link";
 import { Badge } from "./ui";
-import { displayName, formatCents, STATUS_LABEL, type DealStatus } from "@/lib/deals";
+import { displayName, formatCents, isOpen, STATUS_LABEL, type DealStatus } from "@/lib/deals";
 import type { DealRow } from "@/lib/dealsdb";
 
 export const statusTone = (s: DealStatus, expired: boolean): "green" | "yellow" | "red" | "gray" =>
-  expired ? "gray" : s === "active" || s === "completed" ? "green" : s === "offered" || s === "guardian_review" ? "yellow" : "red";
+  expired ? "gray" : s === "active" || s === "completed" ? "green" : isOpen(s) ? "yellow" : s === "cancelled" ? "gray" : "red";
 
 export const isExpired = (d: Pick<DealRow, "status" | "expires_at">) =>
-  (d.status === "offered" || d.status === "guardian_review") && !!d.expires_at && new Date(d.expires_at) < new Date();
+  isOpen(d.status) && !!d.expires_at && new Date(d.expires_at) < new Date();
 
 /** Name of the athlete as the viewer is allowed to see it (minors are abbreviated for non-family). */
 export const athleteLabel = (d: DealRow, viewerId: string, linkedGuardian: boolean) =>

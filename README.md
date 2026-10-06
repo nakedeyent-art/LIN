@@ -92,6 +92,28 @@ npm run typecheck
 - Postgres schema in `db/migrations/001_init.sql`
 - All product data is real and database-backed; there is no mock data left in the app
 
+## Payments and e-signature
+Deal flow: offer → athlete accepts → (minor: guardian approves) → **both sides sign the agreement** → sponsor **funds** it
+(Stripe Checkout) → work happens → sponsor marks it completed → payment is **released** to the payee. A deal only becomes
+`active` when the contract is fully signed. Funded deals can be cancelled only if both sides agree (refund to the sponsor).
+- **Agreement:** deterministic text (`lib/contract.ts`, template `nil-v1`) frozen with a SHA-256 hash; typed-name signatures
+  with ESIGN-style consent, time, IP and user agent. Signed agreements are immutable (DB triggers). Download is `.txt`.
+  The template is a starting point, **not legal advice** — have counsel review it before use.
+- **Money:** Stripe Connect Express (payee onboards via `/dashboard/deals`), hosted Checkout, transfers and refunds with
+  idempotency keys. Intent is committed to the DB before calling Stripe; `payments-retry` job finishes stuck releases/refunds.
+  Payee is the adult athlete, or the approving guardian for a minor. Platform fee: `PLATFORM_FEE_BPS` (default 0, max 2000).
+  Minimum deal is $1.00 when payments are on. Payments are off unless `STRIPE_SECRET_KEY` is set.
+- **Webhook:** `POST /api/stripe/webhook` (set `STRIPE_WEBHOOK_SECRET`); subscribe to `checkout.session.completed`,
+  `checkout.session.async_payment_succeeded`, `checkout.session.expired`, `account.updated`, `charge.dispute.created`,
+  `charge.dispute.closed`. Signatures are verified, events de-duplicated.
+- **Local testing:** `node scripts/mock-stripe.mjs` (port 4010, key `sk_test_mock`) with `STRIPE_API_BASE=http://localhost:4010`
+  (ignored in production).
+- **Scheduling:** payout retries ride on `/api/cron/daily`; call it **hourly** if you take real payments.
+- **Verified only against a local mock of Stripe** (webhook signing cross-checked with the official library) — run through
+  Stripe test mode before going live.
+- **Not built:** automatic dispute handling (disputes are shown as a warning only), syncing refunds made in the Stripe
+  dashboard, tax forms (1099), custodial rules for paying minors, PDF output, admin/support tooling, money-transmitter review.
+
 ## Scheduling the jobs
 Set `CRON_SECRET` (e.g. `openssl rand -hex 32`) and have *any* scheduler call the endpoint once a day:
 ```
@@ -108,8 +130,7 @@ catches up). Add new jobs to `JOBS` in `lib/jobs/runner.ts` — each must be ide
 - Set `APP_URL`, `RESEND_API_KEY` and `MAIL_FROM` for production; in production the app refuses to send without them (dev mode logs emails instead).
 - Guardian links are one-to-one by email; there is no flow yet to add a second guardian, revoke a guardian, or
   re-link when an athlete turns 18 (consent should transfer to the athlete).
-- Deals: no payment processing, e-signature or contract storage (the app records decisions, not a signed
-  agreement); no counter-offers/edits (withdraw and re-offer); active deals can't be cancelled in-app; managers/agents
+- Deals: see "Payments and e-signature" for what's built and missing; no counter-offers/edits (withdraw and re-offer); managers/agents
   can't act for athletes yet; the booster-to-high-school ban and other offer rules in `canOffer` are conservative
   defaults that need per-state legal review; no admin tooling to see/resolve disputed deals.
 - No IP-level rate limiting (login, signup, reset and email change are limited per account only), no MFA.
@@ -133,7 +154,7 @@ catches up). Add new jobs to `JOBS` in `lib/jobs/runner.ts` — each must be ide
 - Dashboard rollups run a few batched queries per page load; fine for hundreds of athletes per viewer, not thousands.
 
 ## Next steps
-1. Payments + e-signature for deals; messaging; more scheduled jobs (expiring offers/invites, session and token cleanup)
+1. Messaging; more scheduled jobs (expiring offers/invites, session and token cleanup)
 2. Credential verification and admin/support tooling (disputes, restoring accounts); file uploads for proof of study and form videos
 3. SIS integrations (Canvas, Google Classroom, PowerSchool), OCR transcript upload
 4. Wearable sync (Apple Health, Health Connect, WHOOP); AI food-photo macros
