@@ -19,6 +19,17 @@ npm run typecheck
 - Real auth: email + password sign-up/login, scrypt hashing, 7-day server-side sessions (only a SHA-256 of the
   cookie token is stored; httpOnly, SameSite=Lax, Secure in production), logout invalidates server-side,
   lockout after 5 failed logins (15 min), uniform login errors and timing for unknown emails
+- Guardian management (Team page): guardian authority exists **only while the athlete is under 18** — enforced in one
+  database view (`guardian_links`) that every guardian power check uses. A guardian can invite another guardian (verified
+  Parent account + matching email, max 4 incl. pending), remove another guardian or step down (the count is re-read inside
+  a lock so two guardians removing each other can't leave a minor with none; the last guardian can't leave while deals are
+  open), list/unlist the minor to sponsors, and delete the minor's account. A minor whose last guardian leaves is
+  unlisted automatically, and (like a mistyped signup address) can name a replacement guardian from their dashboard.
+  Every change is logged (`guardian_events`, masked emails only) and emailed
+- Turning 18: consent transfers to the athlete. Former guardians lose all access by default; the athlete may choose to
+  keep sharing academics and/or nutrition+training with a parent (**view-only**, revocable, never deals), or remove the
+  link. A deal that was awaiting a guardian when the athlete turned 18 is decided by the athlete. Adulthood is evaluated
+  from birth date at query time (no job needed)
 - Account settings (`/dashboard/settings`): edit name (athletes: sport/position/state/grad year); change password
   (re-enter current one; ends other devices; wrong attempts feed the same lockout as login); change email (needs the
   password, link goes to the **new** address and only works for the **same logged-in account**, the old address gets a
@@ -83,6 +94,10 @@ npm run typecheck
   can't act for athletes yet; the booster-to-high-school ban and other offer rules in `canOffer` are conservative
   defaults that need per-state legal review; no admin tooling to see/resolve disputed deals.
 - No IP-level rate limiting (login, signup, reset and email change are limited per account only), no MFA.
+- Guardian identity is only as strong as email control — nothing verifies that a "parent" is actually the athlete's
+  parent. Any one guardian can remove another (logged and emailed, but there's no dispute/custody process). The "you're
+  18" heads-up is an in-app notice for 30 days — there's no scheduler, so no email goes out on the birthday. Coaches,
+  trainers and managers a guardian added keep their access after the athlete turns 18 until the athlete removes them.
 - Account deletion keeps deal records (anonymized) and `deal_events` indefinitely; there's no retention schedule or
   admin/support tooling (e.g. fixing a wrong birth date, restoring an account, or a guardian deleting a minor's account).
   Invites addressed to an old email don't follow an email change. Sessions show start/expiry only (no device/IP). Authorization is enforced in app code (`requireAccess`); consider Postgres
@@ -99,8 +114,8 @@ npm run typecheck
 - Dashboard rollups run a few batched queries per page load; fine for hundreds of athletes per viewer, not thousands.
 
 ## Next steps
-1. Guardian management (add/revoke, turning-18 consent transfer)
-2. Messaging; payments + e-sign for deals; credential verification / admin tooling; file uploads for proof of study and form videos
+1. Payments + e-signature for deals; messaging; a scheduled job (birthday emails, expiring invites/offers)
+2. Credential verification and admin/support tooling (disputes, restoring accounts); file uploads for proof of study and form videos
 3. SIS integrations (Canvas, Google Classroom, PowerSchool), OCR transcript upload
 4. Wearable sync (Apple Health, Health Connect, WHOOP); AI food-photo macros
 5. Video: guided drills, form-video upload and annotation

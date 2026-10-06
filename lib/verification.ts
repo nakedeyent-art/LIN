@@ -57,11 +57,14 @@ export async function sendGuardianInvite(inviteId: string): Promise<void> {
         SET token_hash=$2, expires_at = NOW() + make_interval(days => $3), last_sent_at = NOW()
        FROM users u
       WHERE i.id=$1 AND i.status='pending' AND u.id = i.athlete_id
-      RETURNING i.guardian_email, u.full_name AS athlete_name`, [inviteId, hashToken(token), GUARDIAN_DAYS]);
+      RETURNING i.guardian_email, i.invited_by, u.full_name AS athlete_name`, [inviteId, hashToken(token), GUARDIAN_DAYS]);
   const r = rows[0];
   if (!r) return;
+  const inviter = r.invited_by ? (await db().query("SELECT full_name FROM users WHERE id=$1", [r.invited_by])).rows[0]?.full_name : null;
   await sendMail(r.guardian_email, `${r.athlete_name} invited you as a parent/guardian on LIN`,
-    `${r.athlete_name} listed you as their parent/guardian on LIN, a platform for athlete name, image and likeness (NIL) activity.\n\n` +
+    (inviter
+      ? `${inviter}, a parent/guardian of ${r.athlete_name}, invited you to join as a parent/guardian on LIN, a platform for athlete name, image and likeness (NIL) activity.\n\n`
+      : `${r.athlete_name} listed you as their parent/guardian on LIN, a platform for athlete name, image and likeness (NIL) activity.\n\n`) +
     `As a linked guardian you can review and approve deals and see their academic and health-plan information.\n\n` +
     `To accept, log in or create a Parent account using THIS email address (${r.guardian_email}), verify it, then open:\n` +
     `${appUrl()}/guardian/accept?token=${token}\n\nThis link expires in ${GUARDIAN_DAYS} days. If you don't know this athlete, ignore this email.`);

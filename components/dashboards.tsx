@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { subjectsFor } from "@/lib/access";
 import { snapshots, type Snapshot } from "@/lib/snapshot";
 import { listDeals } from "@/lib/dealsdb";
+import { grownAthletesOf } from "@/lib/guardians";
 import { displayName, formatCents } from "@/lib/deals";
 import { todayStr } from "@/lib/academics";
 import { Badge, Card, Grid, List, Stat } from "./ui";
@@ -42,7 +43,7 @@ async function Athlete({ s }: { s: Session }) {
   const prof = (await db().query(
     `SELECT height_cm IS NOT NULL AS has_metrics, discoverable, birth_date > CURRENT_DATE - INTERVAL '18 years' AS minor,
             (SELECT count(*)::int FROM nutrition_plans n WHERE n.athlete_id = ap.user_id AND n.active_until IS NULL) AS plans,
-            (SELECT count(*)::int FROM athlete_relationships r WHERE r.athlete_id = ap.user_id AND r.relationship='parent' AND r.guardian_approved) AS guardians,
+            (SELECT count(*)::int FROM guardian_links r WHERE r.athlete_id = ap.user_id) AS guardians,
             (SELECT count(*)::int FROM athlete_relationships r WHERE r.athlete_id = ap.user_id AND r.relationship <> 'parent') AS team,
             (SELECT count(*)::int FROM academic_logs l WHERE l.athlete_id = ap.user_id) AS grades
        FROM athlete_profiles ap WHERE ap.user_id=$1`, [s.userId])).rows[0];
@@ -76,8 +77,12 @@ async function Parent({ s }: { s: Session }) {
   const subs = await subjectsFor(s);
   const snaps = await snapshots(subs, todayStr());
   const deals = (await listDeals(s.userId)).filter((d) => d.status === "guardian_review").length;
+  const grown = await grownAthletesOf(s.userId);
   return (
     <Grid>
+      {grown.length > 0 && <Card title="Now adults" wide>
+        <List items={grown.map((g) => <>{g.name} turned 18 — {g.sharing ? "they're sharing some information with you (view-only)" : "they control their own information now"}. <A href="/dashboard/team">Details</A></>)} />
+      </Card>}
       <Card title="My athletes" wide>
         {snaps.length === 0 ? <Empty>No athletes linked yet. Athletes link you by sending an invite to your email.</Empty>
           : <Roster rows={snaps} link={(r) => `/dashboard/academics?athlete=${r.id}`} />}

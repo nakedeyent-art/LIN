@@ -14,8 +14,8 @@ export type DealRow = {
 
 /** Visibility rule, in one place: the two parties and the athlete's linked guardians. */
 const VISIBLE = `(d.counterparty_id = $1 OR d.athlete_id = $1 OR EXISTS (
-  SELECT 1 FROM athlete_relationships r
-   WHERE r.athlete_id = d.athlete_id AND r.member_id = $1 AND r.relationship = 'parent' AND r.guardian_approved))`;
+  SELECT 1 FROM guardian_links r
+   WHERE r.athlete_id = d.athlete_id AND r.member_id = $1))`;
 
 const SELECT = `
   SELECT d.id, d.title, d.amount_cents::float8 AS amount_cents, d.deliverables, d.status, d.expires_at, d.created_at, d.attested_at,
@@ -45,7 +45,7 @@ export async function dealEvents(dealId: string) {
 
 export async function hasLinkedGuardian(athleteId: string, c?: PoolClient): Promise<boolean> {
   const q = (c ?? db()).query(
-    `SELECT 1 FROM athlete_relationships WHERE athlete_id=$1 AND relationship='parent' AND guardian_approved LIMIT 1`, [athleteId]);
+    `SELECT 1 FROM guardian_links WHERE athlete_id=$1 LIMIT 1`, [athleteId]);
   return !!(await q).rowCount;
 }
 
@@ -54,7 +54,7 @@ export async function capacityOn(userId: string, d: Pick<DealRow, "athlete_id" |
   if (d.counterparty_id === userId) return "counterparty";
   if (d.athlete_id === userId) return "athlete";
   const r = await (c ?? db()).query(
-    `SELECT 1 FROM athlete_relationships WHERE athlete_id=$1 AND member_id=$2 AND relationship='parent' AND guardian_approved`,
+    `SELECT 1 FROM guardian_links WHERE athlete_id=$1 AND member_id=$2`,
     [d.athlete_id, userId]);
   return r.rowCount ? "guardian" : null;
 }
@@ -73,8 +73,8 @@ export async function notifyDeal(dealId: string, actorId: string, newStatus: Dea
   try {
     const p = (await db().query(
       `SELECT d.title, a.email AS athlete_email, c.email AS cp_email, a.id AS athlete_id, c.id AS cp_id,
-              COALESCE((SELECT array_agg(g.email) FROM athlete_relationships r JOIN users g ON g.id = r.member_id
-                         WHERE r.athlete_id = d.athlete_id AND r.relationship='parent' AND r.guardian_approved), '{}') AS guardian_emails
+              COALESCE((SELECT array_agg(g.email) FROM guardian_links r JOIN users g ON g.id = r.member_id
+                         WHERE r.athlete_id = d.athlete_id), '{}') AS guardian_emails
          FROM deals d JOIN users a ON a.id = d.athlete_id JOIN users c ON c.id = d.counterparty_id WHERE d.id = $1`, [dealId])).rows[0];
     if (!p) return;
     let to: string[];

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { requireAccess } from "@/lib/session";
 import { db } from "@/lib/db";
-import { pickSubject, prescriberInfo } from "@/lib/access";
+import { canEditFamily, pickSubject, prescriberInfo } from "@/lib/access";
 import { Badge, Card, Disclaimer, Grid, Stat } from "@/components/ui";
 import { addDays, todayStr } from "@/lib/academics";
 import { ACTIVITY_LEVELS, complianceRate, PROFILE_LABEL, PROFILES } from "@/lib/nutrition";
@@ -31,7 +31,7 @@ export default async function Nutrition({ searchParams }: { searchParams: Promis
   const todayTotals = byDay.get(today);
 
   const me = selected.relationship;
-  const own = me === "self", family = me === "self" || me === "parent";
+  const own = me === "self", family = canEditFamily(selected);
   const p = !family && ["trainer", "manager"].includes(me) ? await prescriberInfo(s.userId) : null;
   const canSetPlan = family || (p && canPrescribe(s.role, p.declaredRole, p.credential));
   const qs = (id: string) => `?athlete=${id}`;

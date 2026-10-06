@@ -1,6 +1,8 @@
 import { requireAccess } from "@/lib/session";
 import { db } from "@/lib/db";
 import { subjectsFor } from "@/lib/access";
+import { grownAthletesOf, minorsGuardedBy } from "@/lib/guardians";
+import { GuardianPanel, MyGuardiansPanel } from "./guardian-panel";
 import { Badge, Card, Disclaimer, Grid } from "@/components/ui";
 import { inviteMember, removeMember, revokeInvite } from "./actions";
 
@@ -9,7 +11,10 @@ const sel = { padding: 10, borderRadius: 8, border: "1px solid var(--line)", bac
 export default async function TeamPage({ searchParams }: { searchParams: Promise<{ msg?: string; error?: string }> }) {
   const s = await requireAccess("/dashboard/team");
   const { msg, error } = await searchParams;
-  const athletes = await subjectsFor(s);
+  // Parents manage teams only for athletes who are still minors; an adult who shares with a parent is view-only.
+  const athletes = (await subjectsFor(s)).filter((a) => s.role !== "parent" || a.minor);
+  const guarded = s.role === "parent" ? await minorsGuardedBy(s.userId) : [];
+  const grown = s.role === "parent" ? await grownAthletesOf(s.userId) : [];
   const blocks = await Promise.all(athletes.map(async (a) => {
     const members = (await db().query(
       `SELECT r.id, r.relationship, r.can_view_academics, r.can_view_health, u.full_name, u.email FROM athlete_relationships r
@@ -17,7 +22,7 @@ export default async function TeamPage({ searchParams }: { searchParams: Promise
     const invites = (await db().query(
       `SELECT id, invitee_email, role, can_view_academics, can_view_health, expires_at FROM connection_invites
         WHERE athlete_id=$1 AND status='pending' AND expires_at > NOW() ORDER BY created_at`, [a.id])).rows;
-    const manage = s.role === "parent" || (s.role === "athlete" && !a.minor);
+    const manage = s.role === "parent" ? a.minor : (s.role === "athlete" && !a.minor);
     return { a, members, invites, manage };
   }));
   return (
@@ -26,7 +31,14 @@ export default async function TeamPage({ searchParams }: { searchParams: Promise
       <div className="tag">Choose who can see an athlete&apos;s academics, nutrition and training. Nothing is shared by default.</div>
       {msg && <p className="ok">{msg}</p>}
       {error && <p role="alert" className="error">{error}</p>}
-      {blocks.length === 0 && <p className="muted">No athletes to manage yet.</p>}
+      {blocks.length === 0 && guarded.length === 0 && grown.length === 0 && <p className="muted">No athletes to manage yet.</p>}
+      {grown.map((g) => (
+        <Grid key={g.id}><Card title={`${g.name} is now an adult`} wide>
+          <p>{g.name} turned 18, so your guardian authority has ended and they control their own information.
+            {g.sharing ? <> They&apos;ve chosen to keep sharing with you ({[g.academics && "academics", g.health && "nutrition & training"].filter(Boolean).join(" + ")}), view-only.</> : <> They haven&apos;t chosen to share anything with you at the moment.</>}</p>
+        </Card></Grid>))}
+      {s.role === "athlete" && athletes[0] && <Grid><MyGuardiansPanel athleteId={s.userId} minor={athletes[0].minor} /></Grid>}
+      {guarded.map((g) => <Grid key={`g-${g.id}`}><GuardianPanel athleteId={g.id} name={g.name} viewerId={s.userId} listed={g.listed} /></Grid>)}
       {blocks.map(({ a, members, invites, manage }) => (
         <Grid key={a.id}>
           <Card title={s.role === "parent" ? `${a.name} — team` : "My team"} wide>

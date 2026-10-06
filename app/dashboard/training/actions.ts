@@ -2,7 +2,7 @@
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { requireAccess } from "@/lib/session";
-import { prescriberInfo, subjectFor } from "@/lib/access";
+import { canEditFamily, prescriberInfo, subjectFor } from "@/lib/access";
 import { addDays, daysBetween, todayStr } from "@/lib/academics";
 import { allowedPhases } from "@/lib/calc";
 import { adherenceOf, canPrescribe, type Exercise, type RawExercise, validateWorkout } from "@/lib/training";
@@ -77,7 +77,7 @@ export async function setSeason(formData: FormData) {
   const s = await requireAccess("/dashboard/training");
   const athleteId = str(formData, "athlete_id");
   const sub = UUID.test(athleteId) ? await subjectFor(s, athleteId) : null;
-  if (!sub || !["self", "parent"].includes(sub.relationship)) back(null, "error", "You can't change this.");
+  if (!sub || !canEditFamily(sub)) back(null, "error", "You can't change this.");
   await db().query("UPDATE athlete_profiles SET in_season=$2 WHERE user_id=$1", [sub!.id, formData.get("in_season") === "1"]);
   back(sub!.id, "msg", "Season mode updated.");
 }

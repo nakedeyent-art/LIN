@@ -50,8 +50,12 @@ export function applyAction(d: DealContext, who: Capacity, action: DealAction): 
       if (!open) return no("This deal can't be declined now.");
       return { ok: true, status: "declined" };
     case "approve":
-      if (who !== "guardian") return no("Only a linked guardian can approve.");
+      // Standing first, state second: someone with no standing gets the permission error whatever the deal's state.
+      if (who === "counterparty") return no("Only a linked guardian can approve.");
+      if (who === "athlete" && d.athleteIsMinor) return no("Only a linked guardian can approve.");
+      if (who === "guardian" && !d.athleteIsMinor) return no("Guardian approval no longer applies: this athlete is now an adult.");
       if (d.status !== "guardian_review") return no("There is nothing to approve right now.");
+      // Guardians decide for minors; if the athlete has since turned 18 the athlete decides.
       return { ok: true, status: "active" };
     case "reject":
       if (who !== "guardian") return no("Only a linked guardian can reject.");

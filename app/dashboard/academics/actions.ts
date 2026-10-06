@@ -61,7 +61,7 @@ export async function verifyStudy(formData: FormData) {
   if (!UUID.test(id)) redirect("/dashboard/academics");
   const row = (await db().query("SELECT athlete_id FROM study_sessions WHERE id=$1", [id])).rows[0];
   const subject = row ? await subjectFor(s, row.athlete_id) : null;
-  if (!subject || !subject.academics || !["parent", "manager"].includes(subject.relationship)) back(null, "error", "You can't verify this session.");
+  if (!subject || !subject.academics || !(subject.guardianPowers || subject.relationship === "manager")) back(null, "error", "You can't verify this session.");
   await db().query("UPDATE study_sessions SET verified_by=$2, verified_at=NOW() WHERE id=$1 AND verified_at IS NULL", [id, s.userId]);
   back(subject!.id, "msg", "Verified.");
 }

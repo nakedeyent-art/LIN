@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { requireAccess } from "@/lib/session";
 import { db } from "@/lib/db";
-import { pickSubject, prescriberInfo } from "@/lib/access";
+import { canEditFamily, pickSubject, prescriberInfo } from "@/lib/access";
 import { Badge, Card, Disclaimer, Grid, Stat } from "@/components/ui";
 import { addDays, todayStr } from "@/lib/academics";
 import { allowedPhases, missedSessionAlert } from "@/lib/calc";
@@ -24,7 +24,7 @@ export default async function Training({ searchParams }: { searchParams: Promise
   const wr = rows.map((r) => ({ status: r.status, scheduledDate: r.day, adherence: r.adherence }));
   const stats = adherenceStats(wr, today), weekMissed = missedSessionAlert(lastWeekStatuses(wr, today));
 
-  const me = selected.relationship, own = me === "self", family = own || me === "parent";
+  const me = selected.relationship, own = me === "self", family = canEditFamily(selected);
   const pinfo = ["trainer", "manager"].includes(me) ? await prescriberInfo(s.userId) : null;
   const prescriber = !!pinfo && canPrescribe(s.role, pinfo.declaredRole, pinfo.credential);
   const allowed = allowedPhases(selected.inSeason ? "in_season" : "off_season", selected.level === "high_school");

@@ -1,29 +1,23 @@
 "use server";
-import { randomBytes } from "node:crypto";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { hashPassword, hashToken, isValidEmail, newSessionToken, normalizeEmail, verifyPassword } from "@/lib/crypto";
-import { clearFailures, recordFailure } from "@/lib/lockout";
+import { checkPassword } from "@/lib/reauth";
 import { appUrl, sendMail } from "@/lib/mailer";
 import { validateNewPassword } from "@/lib/password-policy";
 import { DELETE_PHRASE, maskEmail, validateAthleteProfile, validateDisplayName } from "@/lib/account";
 import { destroySession, endOtherSessions, requireUser } from "@/lib/session";
 import { RESEND_COOLDOWN_SECONDS } from "@/lib/verification";
+import { purgeAndAnonymize } from "@/lib/account-deletion";
 
 const str = (f: FormData, k: string) => String(f.get(k) ?? "").trim();
 const done = (key: "msg" | "error", m: string): never => redirect(`/dashboard/settings?${key}=${encodeURIComponent(m)}`);
 const notify = async (to: string, subject: string, text: string) => { try { await sendMail(to, subject, text); } catch (e) { console.error("account notice failed", e); } };
 
-/** Re-authentication for sensitive changes. Wrong passwords count toward the same lockout as login. */
 async function reauth(userId: string, password: string): Promise<{ email: string; name: string; hash: string }> {
-  const u = (await db().query("SELECT email, full_name, password_hash, locked_until FROM users WHERE id=$1", [userId])).rows[0];
-  if (u.locked_until && new Date(u.locked_until) > new Date()) done("error", "Too many attempts. Try again in 15 minutes.");
-  if (!(await verifyPassword(password, u.password_hash))) {
-    await recordFailure(userId);
-    done("error", "Your current password is incorrect.");
-  }
-  await clearFailures(userId);
-  return { email: u.email, name: u.full_name, hash: u.password_hash };
+  const r = await checkPassword(userId, password);
+  if (!r.ok) done("error", r.error);
+  return r as { ok: true; email: string; name: string; hash: string };
 }
 
 export async function updateProfile(formData: FormData) {
@@ -104,8 +98,8 @@ async function deletionBlockers(userId: string, role: string): Promise<string | 
   if (mine > 0) return `You have ${mine} open deal${mine > 1 ? "s" : ""} (offered, awaiting guardian, or active). Resolve ${mine > 1 ? "them" : "it"} first.`;
   if (role === "parent") {
     const kids = (await db().query(
-      `SELECT count(*)::int AS n FROM deals d JOIN athlete_relationships r ON r.athlete_id = d.athlete_id
-        WHERE r.member_id=$1 AND r.relationship='parent' AND d.status IN ('offered','guardian_review','active')`, [userId])).rows[0].n;
+      `SELECT count(*)::int AS n FROM deals d JOIN guardian_links r ON r.athlete_id = d.athlete_id
+        WHERE r.member_id=$1 AND d.status IN ('offered','guardian_review','active')`, [userId])).rows[0].n;
     if (kids > 0) return "An athlete you're linked to has open deals that need a guardian. Resolve them first.";
   }
   return null;
@@ -126,32 +120,7 @@ export async function deleteAccount(formData: FormData) {
   try {
     await client.query("BEGIN");
     await client.query("SELECT 1 FROM users WHERE id=$1 FOR UPDATE", [s.userId]);
-    const id = s.userId;
-    const run = (q: string) => client.query(q, [id]);
-    await run("DELETE FROM sessions WHERE user_id=$1");
-    await run("DELETE FROM email_tokens WHERE user_id=$1");
-    await run("DELETE FROM athlete_relationships WHERE athlete_id=$1 OR member_id=$1");
-    await run("DELETE FROM connection_invites WHERE athlete_id=$1 OR invited_by=$1 OR accepted_by=$1");
-    await run("DELETE FROM guardian_invites WHERE athlete_id=$1 OR accepted_by=$1");
-    await client.query("UPDATE connection_invites SET status='revoked', token_hash=NULL WHERE invitee_email=$1 AND status='pending'", [me.email]);
-    await client.query("UPDATE guardian_invites SET status='revoked', token_hash=NULL WHERE guardian_email=$1 AND status='pending'", [me.email]);
-    await run("DELETE FROM academic_logs WHERE athlete_id=$1");
-    await run("DELETE FROM study_sessions WHERE athlete_id=$1");
-    await run("DELETE FROM food_logs WHERE athlete_id=$1");
-    await run("DELETE FROM nutrition_plans WHERE athlete_id=$1");
-    await run("DELETE FROM athlete_workouts WHERE athlete_id=$1");
-    await run("UPDATE nutrition_plans SET prescribed_by=NULL WHERE prescribed_by=$1");
-    await run("UPDATE athlete_workouts SET prescribed_by=NULL WHERE prescribed_by=$1");
-    await run("UPDATE study_sessions SET verified_by=NULL WHERE verified_by=$1");
-    await run("DELETE FROM disclaimer_acceptances WHERE athlete_id=$1 OR accepted_by=$1");
-    await run("DELETE FROM recruiting_board WHERE recruiter_id=$1 OR athlete_id=$1");
-    await run("DELETE FROM events WHERE organizer_id=$1");
-    await run("DELETE FROM athlete_profiles WHERE user_id=$1");
-    await run("DELETE FROM manager_declarations WHERE manager_id=$1");
-    await client.query(
-      `UPDATE users SET email=$2, full_name='Deleted user', password_hash=$3, failed_logins=0, locked_until=NULL,
-              email_verified_at=NULL, deleted_at=NOW() WHERE id=$1`,
-      [id, `deleted-${id}@deleted.invalid`, "!" + randomBytes(24).toString("hex")]);
+    await purgeAndAnonymize(client, s.userId, me.email);
     await client.query("COMMIT");
   } catch (e) { await client.query("ROLLBACK"); throw e; } finally { client.release(); }
 

@@ -6,7 +6,12 @@ export type Subject = {
   id: string; name: string; sport: string | null; level: string; minor: boolean; inSeason: boolean;
   relationship: "self" | Role;
   academics: boolean; health: boolean;   // what the viewer may see (nutrition + training = "health")
+  /** True only for a linked parent of a MINOR. A parent of an adult athlete is a view-only viewer at most. */
+  guardianPowers: boolean;
 };
+
+/** The athlete themself, or a guardian with real authority (minor athlete): may edit family-controlled data. */
+export const canEditFamily = (s: Pick<Subject, "relationship" | "guardianPowers">) => s.relationship === "self" || s.guardianPowers;
 
 const BASE = `SELECT u.id, u.full_name, ap.sport, ap.level, ap.in_season,
          ap.birth_date > CURRENT_DATE - INTERVAL '18 years' AS minor`;
@@ -14,20 +19,26 @@ const BASE = `SELECT u.id, u.full_name, ap.sport, ap.level, ap.in_season,
 /**
  * Every athlete this user may see, with exactly what they may see. This is the single authorization
  * source for academics / nutrition / training data: an athlete sees themself; everyone else needs an
- * athlete_relationships row that matches their role (guardians additionally need guardian_approved).
+ * athlete_relationships row that matches their role (guardians additionally need guardian_approved, and after the athlete turns 18 the athlete's consent).
  */
 export async function subjectsFor(s: Pick<Session, "userId" | "role">): Promise<Subject[]> {
   if (s.role === "athlete") {
     const { rows } = await db().query(`${BASE} FROM users u JOIN athlete_profiles ap ON ap.user_id = u.id WHERE u.id = $1`, [s.userId]);
-    return rows.map((r) => ({ ...shape(r), relationship: "self" as const, academics: true, health: true }));
+    return rows.map((r) => ({ ...shape(r), relationship: "self" as const, academics: true, health: true, guardianPowers: false }));
   }
   const rel = s.role === "parent" ? "parent" : s.role;
   const { rows } = await db().query(
     `${BASE}, r.can_view_academics, r.can_view_health
        FROM athlete_relationships r JOIN users u ON u.id = r.athlete_id JOIN athlete_profiles ap ON ap.user_id = u.id
-      WHERE r.member_id = $1 AND r.relationship::text = $2 AND (r.relationship <> 'parent' OR r.guardian_approved)
+      WHERE r.member_id = $1 AND r.relationship::text = $2
+        AND (r.relationship <> 'parent'
+             -- guardians: authority while the athlete is a minor; after 18 only what the athlete chose to keep sharing
+             OR (r.guardian_approved AND (ap.birth_date > CURRENT_DATE - INTERVAL '18 years' OR r.consent_confirmed_at IS NOT NULL)))
       ORDER BY u.full_name`, [s.userId, rel]);
-  return rows.map((r) => ({ ...shape(r), relationship: s.role, academics: r.can_view_academics, health: r.can_view_health }));
+  return rows.map((r) => ({
+    ...shape(r), relationship: s.role, academics: r.can_view_academics, health: r.can_view_health,
+    guardianPowers: s.role === "parent" && !!r.minor,
+  }));
 }
 
 const shape = (r: Record<string, unknown>) => ({
@@ -61,7 +72,7 @@ export async function canManageTeam(s: Pick<Session, "userId" | "role">, athlete
   }
   if (s.role === "parent") {
     return !!(await db().query(
-      "SELECT 1 FROM athlete_relationships WHERE athlete_id=$1 AND member_id=$2 AND relationship='parent' AND guardian_approved", [athleteId, s.userId])).rowCount;
+      "SELECT 1 FROM guardian_links WHERE athlete_id=$1 AND member_id=$2", [athleteId, s.userId])).rowCount;
   }
   return false;
 }

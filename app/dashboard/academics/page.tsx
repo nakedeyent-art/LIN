@@ -29,7 +29,7 @@ export default async function Academics({ searchParams }: { searchParams: Promis
   const cleared = courses.length > 0 && eligibilityGate(wk.verified, wk.verified > 0, reds);
   const avg = avgGrade(courses);
   const me = selected.relationship === "self";
-  const canVerify = ["parent", "manager"].includes(selected.relationship);
+  const canVerify = selected.guardianPowers || selected.relationship === "manager";
   const qs = (id: string) => `?athlete=${id}`;
 
   return (

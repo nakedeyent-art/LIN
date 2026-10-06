@@ -2,7 +2,7 @@
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { requireAccess } from "@/lib/session";
-import { prescriberInfo, subjectFor } from "@/lib/access";
+import { canEditFamily, prescriberInfo, subjectFor } from "@/lib/access";
 import { ageFromBirthDate } from "@/lib/crypto";
 import { addDays, daysBetween, todayStr } from "@/lib/academics";
 import { ACTIVITY_LEVELS, buildTargets, PROFILES } from "@/lib/nutrition";
@@ -19,7 +19,7 @@ export async function saveMetrics(formData: FormData) {
   const s = await requireAccess("/dashboard/nutrition");
   const athleteId = str(formData, "athlete_id");
   const sub = UUID.test(athleteId) ? await subjectFor(s, athleteId) : null;
-  if (!sub || !["self", "parent"].includes(sub.relationship)) back(null, "error", "You can't edit these details.");
+  if (!sub || !canEditFamily(sub)) back(null, "error", "You can't edit these details.");
   const h = num(str(formData, "height_cm"), 100, 250, 1), w = num(str(formData, "weight_kg"), 25, 250, 1);
   const sex = str(formData, "sex"), act = parseFloat(str(formData, "activity_factor"));
   if (h === null) back(sub!.id, "error", "Height must be 100–250 cm.");
@@ -38,7 +38,7 @@ export async function setPlan(formData: FormData) {
   const profile = str(formData, "profile") as Profile;
   if (!sub || !sub.health) back(null, "error", "You can't set a plan for this athlete.");
   const me = sub!.relationship;
-  if (me !== "self" && me !== "parent") {
+  if (!canEditFamily(sub!)) {
     const p = await prescriberInfo(s.userId);
     if (!["trainer", "manager"].includes(me) || !canPrescribe(s.role, p.declaredRole, p.credential)) back(sub!.id, "error", "Only the athlete, a guardian, or a credentialed trainer/certified coach can set a plan.");
   }

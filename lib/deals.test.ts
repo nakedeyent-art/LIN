@@ -54,7 +54,25 @@ describe("deal state machine", () => {
   it("lists actions per capacity for the UI", () => {
     expect(availableActions(ctx(), "athlete")).toEqual(["accept", "decline"]);
     expect(availableActions(ctx(), "counterparty")).toEqual(["withdraw"]);
-    expect(availableActions(ctx({ status: "guardian_review" }), "guardian")).toEqual(["approve", "reject"]);
+    expect(availableActions(ctx({ status: "guardian_review", athleteIsMinor: true, athleteHasGuardian: true }), "guardian")).toEqual(["approve", "reject"]);
+  });
+});
+
+describe("deals that cross the 18th birthday", () => {
+  const adult = ctx({ status: "guardian_review", athleteIsMinor: false });
+  it("the now-adult athlete decides a deal that was awaiting a guardian", () => {
+    expect(applyAction(adult, "athlete", "approve")).toEqual({ ok: true, status: "active" });
+    expect(applyAction(adult, "athlete", "decline")).toEqual({ ok: true, status: "declined" });
+  });
+  it("the former guardian can no longer approve", () => {
+    expect(applyAction(adult, "guardian", "approve").ok).toBe(false);
+  });
+  it("permission errors come before state errors", () => {
+    const r = applyAction(ctx({ status: "offered" }), "counterparty", "approve");
+    expect(!r.ok && r.error).toMatch(/Only a linked guardian can approve/);
+  });
+  it("a minor can never approve their own deal", () => {
+    expect(applyAction(ctx({ status: "guardian_review", athleteIsMinor: true, athleteHasGuardian: true }), "athlete", "approve").ok).toBe(false);
   });
 });
 

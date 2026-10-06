@@ -15,7 +15,7 @@ export default async function Athletes({ searchParams }: { searchParams: Promise
        FROM athlete_profiles ap JOIN users u ON u.id = ap.user_id
       WHERE ap.discoverable AND u.email_verified_at IS NOT NULL
         AND (ap.birth_date <= CURRENT_DATE - INTERVAL '18 years' OR EXISTS (
-              SELECT 1 FROM athlete_relationships r WHERE r.athlete_id = u.id AND r.relationship='parent' AND r.guardian_approved))
+              SELECT 1 FROM guardian_links r WHERE r.athlete_id = u.id))
         AND ($1 = '' OR ap.sport ILIKE $1)
       ORDER BY u.full_name LIMIT 100`, [sport]);
   return (

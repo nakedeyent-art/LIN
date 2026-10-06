@@ -33,12 +33,13 @@ export default async function DealDetail({ params, searchParams }: {
         {actions.length > 0 && (
           <Card title="Your decision" wide>
             {who === "guardian" && d.status === "guardian_review" && <p>{d.athlete_name} accepted this offer. As a parent/guardian, you decide whether it becomes active.</p>}
+            {who === "athlete" && !d.athlete_minor && d.status === "guardian_review" && <p>You&apos;re now 18, so this deal no longer needs a guardian — you decide.</p>}
             {who === "athlete" && d.athlete_minor && <p className="muted">You&apos;re under 18: accepting sends this to your parent/guardian for final approval.</p>}
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               {actions.map((a) => (
                 <form key={a} action={dealAction}>
                   <input type="hidden" name="deal_id" value={d.id} /><input type="hidden" name="action" value={a} />
-                  <button className={`btn${a === "decline" || a === "reject" || a === "withdraw" ? " ghost" : ""}`} type="submit">{ACTION_LABEL[a]}</button>
+                  <button className={`btn${a === "decline" || a === "reject" || a === "withdraw" ? " ghost" : ""}`} type="submit">{a === "approve" && who === "athlete" ? "Confirm deal" : ACTION_LABEL[a]}</button>
                 </form>))}
             </div>
           </Card>
