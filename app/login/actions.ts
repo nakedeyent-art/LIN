@@ -23,7 +23,7 @@ export async function login(formData: FormData) {
   const email = normalizeEmail(str(formData, "email"));
   const password = String(formData.get("password") ?? "");
   const { rows } = await db().query(
-    "SELECT id, password_hash, failed_logins, locked_until FROM users WHERE email = $1 AND deleted_at IS NULL", [email]);
+    "SELECT id, password_hash, failed_logins, locked_until, suspended_at FROM users WHERE email = $1 AND deleted_at IS NULL", [email]);
   const u = rows[0];
   const locked = u?.locked_until && new Date(u.locked_until) > new Date();
   const ok = await verifyPassword(password, u?.password_hash ?? DUMMY_HASH);
@@ -31,6 +31,7 @@ export async function login(formData: FormData) {
     if (u && !locked) await recordFailure(u.id);
     failWithNext("/login", locked ? "Too many attempts. Try again in 15 minutes." : "Invalid email or password.", next);
   }
+  if (u.suspended_at) failWithNext("/login", "This account is suspended. Contact support.", next);   // only after the right password, so it doesn't reveal who has an account
   await clearFailures(u.id);
   await createSession(u.id);
   redirect(next);

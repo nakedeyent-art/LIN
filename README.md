@@ -127,6 +127,32 @@ conversation with a sponsor. Guardians lose the thread when the athlete turns 18
 - Not built: attachments, reporting/blocking, moderation tooling, real-time updates (refresh to see replies), message search,
   and any filter for off-platform contact details or inappropriate content.
 
+## Notifications
+An in-app notification centre (`/dashboard/notifications`, with an unread count in the sidebar) sits alongside the emails.
+Deal changes, payment events, new messages and the "you're 18" transition create notifications; repeated events (five
+messages) fold into one unread row. Text never contains amounts or message bodies, and links must stay inside `/dashboard`.
+Under Settings, people can turn off the optional emails (deal/payment updates, new messages); security emails
+(verification, password and email changes, deletion) are always sent. Read notifications are removed after 90 days by the
+`housekeeping` job (which also drops expired sessions and job logs older than 180 days), so keep the scheduler running.
+Not built: push/SMS, per-event preferences, notifications for guardian invites/removals and team invites (those stay email-only).
+
+## Admin panel
+`/admin` (404 for everyone who isn't an admin). Admin rights are granted **only** from a shell with database access:
+```
+node --env-file-if-exists=.env.local scripts/make-admin.mjs you@example.com            # grant (account must be verified)
+node --env-file-if-exists=.env.local scripts/make-admin.mjs you@example.com --revoke   # revoke and end their sessions
+```
+- **Overview:** account and deal counts, open card disputes, payments stuck mid-processing, latest job runs.
+- **Users:** search; account facts; suspend/restore (signs them out; login says "suspended" only after the right password),
+  clear a lockout, resend verification, correct an athlete's birth date (blocked while they have open deals or money in flight;
+  a minor with no guardian is unlisted).
+- **Deals:** list/filter; terms metadata, agreement hash, payment log; retry a stuck release/refund (idempotent at Stripe).
+- **Audit log:** append-only (DB trigger). Every change needs the admin's password again and a written reason; viewing a
+  user's details is logged too (once per hour per user).
+- **Boundaries:** admins can't change themselves or other admins, and never see message text, grades, nutrition, training or health data.
+- **Not built:** MFA for admins (strongly recommended before launch), IP allow-listing, roles below "full admin", approving
+  credentials, refunds/payouts initiated by an admin, content moderation, deleting accounts on someone's behalf, a dispute-resolution workflow.
+
 ## Scheduling the jobs
 Set `CRON_SECRET` (e.g. `openssl rand -hex 32`) and have *any* scheduler call the endpoint once a day:
 ```

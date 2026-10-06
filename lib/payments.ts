@@ -1,6 +1,7 @@
 /** Payments orchestration (Stripe Connect, separate charges and transfers). Card data never reaches this app. */
 import type { PoolClient } from "pg";
 import { db } from "./db";
+import { notifyInApp } from "./notificationsdb";
 import { appUrl, sendMail } from "./mailer";
 import { paymentsEnabled, stripe, StripeError } from "./stripe";
 import { fundingBlocker, payeeValid, type PaymentStatus } from "./payment-rules";
@@ -32,9 +33,12 @@ async function pevent(c: Pick<PoolClient, "query">, paymentId: string, action: s
 export const notifyDealParties = async (dealId: string, subject: string, text: string) => {
   try {
     const r = (await db().query(
-      `SELECT array_remove(ARRAY[c.email, a.email, p.email], NULL) AS to FROM deals d JOIN users c ON c.id=d.counterparty_id
-         JOIN users a ON a.id=d.athlete_id LEFT JOIN users p ON p.id=d.payee_user_id WHERE d.id=$1`, [dealId])).rows[0];
-    for (const to of new Set<string>(r?.to ?? [])) await sendMail(to, subject, `${text}\n\n${appUrl()}/dashboard/deals/${dealId}`);
+      `SELECT d.title, array_remove(ARRAY[d.counterparty_id, d.athlete_id, d.payee_user_id], NULL) AS ids FROM deals d WHERE d.id=$1`, [dealId])).rows[0];
+    if (!r) return;
+    const ids = [...new Set<string>(r.ids)];
+    await notifyInApp(ids, { kind: "payment", title: `${subject}: "${r.title}"`, href: `/dashboard/deals/${dealId}` });
+    const emails = (await db().query("SELECT email FROM users WHERE id = ANY($1::uuid[]) AND deleted_at IS NULL AND email_deal_updates", [ids])).rows;
+    for (const e of emails) await sendMail(e.email, subject, `${text}\n\n${appUrl()}/dashboard/deals/${dealId}`);
   } catch (e) { console.error("payment notice failed", (e as Error).message); }
 };
 

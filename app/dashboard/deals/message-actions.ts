@@ -22,6 +22,6 @@ export async function postMessage(formData: FormData) {
 
   const r = await insertMessage(id, s.userId, (c as { body: string }).body, MAX_MESSAGES_PER_MINUTE);
   if (!r.ok) back("You're sending messages too quickly. Wait a moment and try again.");
-  else await notifyNewMessage(id, r.emails);
+  else await notifyNewMessage(id, r);
   redirect(`/dashboard/deals/${id}/messages#end`);
 }

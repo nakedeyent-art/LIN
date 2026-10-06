@@ -1,5 +1,6 @@
 import { db } from "../db";
 import { appUrl, sendMail } from "../mailer";
+import { notifyInApp } from "../notificationsdb";
 import { classify, shouldGiveUp } from "./adulthood";
 import { athleteAdultEmail, guardianAdultEmail } from "./adult-emails";
 
@@ -59,9 +60,9 @@ async function processOne(id: string, today: string, dry: boolean): Promise<keyo
     }
 
     const guardians = (await client.query(
-      `SELECT g.full_name, g.email FROM athlete_relationships r JOIN users g ON g.id = r.member_id
+      `SELECT g.id, g.full_name, g.email FROM athlete_relationships r JOIN users g ON g.id = r.member_id
         WHERE r.athlete_id=$1 AND r.relationship='parent' AND r.guardian_approved
-          AND g.deleted_at IS NULL AND g.email_verified_at IS NOT NULL`, [id])).rows as { full_name: string; email: string }[];
+          AND g.deleted_at IS NULL AND g.email_verified_at IS NOT NULL`, [id])).rows as { id: string; full_name: string; email: string }[];
     const hadGuardian = (await client.query(
       "SELECT 1 FROM athlete_relationships WHERE athlete_id=$1 AND relationship='parent' AND guardian_approved", [id])).rowCount! > 0;
     const pendingDeals = (await client.query("SELECT count(*)::int AS n FROM deals WHERE athlete_id=$1 AND status='guardian_review'", [id])).rows[0].n as number;
@@ -89,7 +90,9 @@ async function processOne(id: string, today: string, dry: boolean): Promise<keyo
       console.error(`adult-transition: athlete email failed (${giveUp ? "giving up" : "will retry"}):`, (e as Error).message);
       return "failed";
     }
+    await notifyInApp([id], { kind: "guardian", title: "You're 18 now: you make your own decisions about deals and sharing", href: "/dashboard/team" });
     for (const g of guardians) {
+      await notifyInApp([g.id], { kind: "guardian", title: `${a.full_name} turned 18: your guardian access has ended`, href: "/dashboard" });
       try {
         const m = guardianAdultEmail({ guardianName: g.full_name, athleteName: a.full_name, pendingDeals, appUrl: base });
         await sendMail(g.email, m.subject, m.text);

@@ -5,6 +5,7 @@ import {
   type Capacity, type DealContext, type DealStatus, STATUS_LABEL,
 } from "./deals";
 import { paymentsEnabled } from "./stripe";
+import { notifyInApp } from "./notificationsdb";
 
 export type DealRow = {
   id: string; title: string; amount_cents: number; deliverables: string; status: DealStatus;
@@ -80,23 +81,24 @@ export async function dealContext(d: DealRow, c?: PoolClient): Promise<DealConte
   };
 }
 
-/** Emails whoever needs to know. Never includes amounts/terms — just a link behind login. */
+/** Tells whoever needs to know, in-app and (if they haven't opted out) by email. Never includes amounts/terms — just a link behind login. */
 export async function notifyDeal(dealId: string, actorId: string, newStatus: DealStatus, created = false): Promise<void> {
   try {
-    const p = (await db().query(
-      `SELECT d.title, a.email AS athlete_email, c.email AS cp_email, a.id AS athlete_id, c.id AS cp_id,
-              COALESCE((SELECT array_agg(g.email) FROM guardian_links r JOIN users g ON g.id = r.member_id
-                         WHERE r.athlete_id = d.athlete_id), '{}') AS guardian_emails
-         FROM deals d JOIN users a ON a.id = d.athlete_id JOIN users c ON c.id = d.counterparty_id WHERE d.id = $1`, [dealId])).rows[0];
-    if (!p) return;
-    let to: string[];
-    if (created) to = [p.athlete_email];
-    else if (newStatus === "guardian_review") to = p.guardian_emails;
-    else to = [p.cp_email, p.athlete_email, ...p.guardian_emails];
-    const actor = (await db().query("SELECT email FROM users WHERE id=$1", [actorId])).rows[0]?.email;
-    to = [...new Set(to)].filter((e) => e && e !== actor);
+    const d = (await db().query("SELECT d.title, d.athlete_id, d.counterparty_id FROM deals d WHERE d.id = $1", [dealId])).rows[0];
+    if (!d) return;
+    const guardians = (await db().query("SELECT member_id FROM guardian_links WHERE athlete_id=$1", [d.athlete_id])).rows.map((r) => r.member_id as string);
+    let ids: string[];
+    if (created) ids = [d.athlete_id];
+    else if (newStatus === "guardian_review") ids = guardians;
+    else ids = [d.counterparty_id, d.athlete_id, ...guardians];
+    ids = [...new Set(ids)].filter((i) => i !== actorId);
+    if (!ids.length) return;
+    const title = created ? `New offer: "${d.title}"` : `"${d.title}" is now ${STATUS_LABEL[newStatus]}`;
+    await notifyInApp(ids, { kind: "deal", title, href: `/dashboard/deals/${dealId}` });
+    const people = (await db().query(
+      "SELECT email FROM users WHERE id = ANY($1::uuid[]) AND deleted_at IS NULL AND email_deal_updates", [ids])).rows.map((r) => r.email as string);
     const subject = created ? "You have a new NIL offer" : `NIL deal update: ${STATUS_LABEL[newStatus]}`;
-    const text = `${created ? "A new offer is waiting for you" : `A deal ("${p.title}") is now: ${STATUS_LABEL[newStatus]}`}.\n\nLog in to review: ${appUrl()}/dashboard/deals/${dealId}`;
-    await Promise.all(to.map((e) => sendMail(e, subject, text)));
+    const text = `${created ? "A new offer is waiting for you" : `A deal ("${d.title}") is now: ${STATUS_LABEL[newStatus]}`}.\n\nLog in to review: ${appUrl()}/dashboard/deals/${dealId}\n\nYou can change which emails you get under Settings.`;
+    await Promise.all(people.map((e) => sendMail(e, subject, text)));
   } catch (e) { console.error("deal notification failed", e); }
 }

@@ -5,7 +5,7 @@ import { MIN_PASSWORD_LENGTH } from "@/lib/password-policy";
 import { DELETE_PHRASE } from "@/lib/account";
 import { Badge, Card, Grid } from "@/components/ui";
 import {
-  cancelEmailChange, changePassword, deleteAccount, requestEmailChange, signOutOthers, updateProfile,
+  cancelEmailChange, changePassword, deleteAccount, requestEmailChange, signOutOthers, updateEmailPrefs, updateProfile,
 } from "./actions";
 
 const stack = { display: "grid", gap: 8, maxWidth: 420 } as const;
@@ -15,11 +15,13 @@ export default async function Settings({ searchParams }: { searchParams: Promise
   const s = await requireUser();
   const q = await searchParams;
   const pool = db();
-  const [prof, pending, sessions] = await Promise.all([
+  const [prefs, prof, pending, sessions] = await Promise.all([
+    pool.query("SELECT email_deal_updates, email_messages FROM users WHERE id=$1", [s.userId]),
     pool.query("SELECT sport, position, state, grad_year, birth_date::text AS birth, level FROM athlete_profiles WHERE user_id=$1", [s.userId]),
     pool.query("SELECT payload, expires_at FROM email_tokens WHERE user_id=$1 AND purpose='change_email' AND used_at IS NULL AND expires_at > NOW() ORDER BY created_at DESC LIMIT 1", [s.userId]),
     pool.query("SELECT token_hash = $2 AS current, created_at, expires_at FROM sessions WHERE user_id=$1 AND expires_at > NOW() ORDER BY created_at DESC", [s.userId, await currentTokenHash()]),
   ]);
+  const pref = prefs.rows[0];
   const a = prof.rows[0], change = pending.rows[0];
   return (
     <>
@@ -61,6 +63,15 @@ export default async function Settings({ searchParams }: { searchParams: Promise
             <input type="password" name="confirm" placeholder="Confirm new password" autoComplete="new-password" required />
             <button className="btn" type="submit">Change password</button>
             <p className="muted">Your other devices are signed out when you change it.</p>
+          </form>
+        </Card>
+
+        <Card title="Email notifications">
+          <form action={updateEmailPrefs} style={stack}>
+            <label><input type="checkbox" name="deal_updates" defaultChecked={pref.email_deal_updates} /> Deal and payment updates</label>
+            <label><input type="checkbox" name="messages" defaultChecked={pref.email_messages} /> New messages on my deals</label>
+            <button className="btn" type="submit">Save</button>
+            <p className="muted">In-app notifications always appear. Security emails (verification, password and email changes, account deletion) are always sent.</p>
           </form>
         </Card>
 

@@ -2,6 +2,7 @@ import { db } from "../db";
 import { runAdultTransition, type JobResult } from "./adult-transition";
 import { retryStuckPayments } from "../payments";
 import { paymentsEnabled } from "../stripe";
+import { purgeOldNotifications } from "../notificationsdb";
 
 const LOCK_KEY = 7_345_001;   // arbitrary app-wide advisory-lock id: only one run of the daily jobs at a time
 
@@ -17,6 +18,14 @@ const JOBS: { name: string; run: (o: { dry: boolean }) => Promise<JobResult> }[]
       if (dry || !paymentsEnabled()) return { processed: 0, skipped: 0, failed: 0 };
       const r = await retryStuckPayments();
       return { processed: r.processed, skipped: 0, failed: r.failed };
+    } },
+  // Read notifications expire; expired login sessions and old finished job logs are dropped. Counts only.
+  { name: "housekeeping", run: async ({ dry }) => {
+      if (dry) return { processed: 0, skipped: 0, failed: 0 };
+      const notes = await purgeOldNotifications();
+      const sessions = (await db().query("DELETE FROM sessions WHERE expires_at < NOW() - INTERVAL '1 day'")).rowCount ?? 0;
+      const logs = (await db().query("DELETE FROM job_runs WHERE started_at < NOW() - INTERVAL '180 days'")).rowCount ?? 0;
+      return { processed: notes + sessions + logs, skipped: 0, failed: 0 };
     } },
 ];
 

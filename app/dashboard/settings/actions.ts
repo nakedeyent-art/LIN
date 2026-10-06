@@ -22,6 +22,14 @@ async function reauth(userId: string, password: string): Promise<{ email: string
   return r as { ok: true; email: string; name: string; hash: string };
 }
 
+/** Optional emails only. Security emails (verification, password, email change, deletion) are always sent. */
+export async function updateEmailPrefs(formData: FormData) {
+  const s = await requireUser();
+  await db().query("UPDATE users SET email_deal_updates=$2, email_messages=$3 WHERE id=$1",
+    [s.userId, formData.get("deal_updates") === "on", formData.get("messages") === "on"]);
+  done("msg", "Email preferences saved.");
+}
+
 export async function updateProfile(formData: FormData) {
   const s = await requireUser();
   const name = str(formData, "name");
