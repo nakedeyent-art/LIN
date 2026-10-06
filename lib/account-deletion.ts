@@ -51,6 +51,7 @@ export async function purgeAndAnonymize(client: PoolClient, id: string, email: s
   await run("DELETE FROM manager_declarations WHERE manager_id=$1");
   await run("UPDATE deal_messages SET body='[message removed]' WHERE sender_id=$1");   // keep the thread intact for the others; the words go
   await run("DELETE FROM notifications WHERE user_id=$1");
+  await run("DELETE FROM news_prefs WHERE user_id=$1");
   await run("DELETE FROM user_blocks WHERE blocker_id=$1 OR blocked_id=$1 OR athlete_id=$1");
   await run("DELETE FROM deal_attachments WHERE uploader_id=$1");   // the files go with the person; the thread keeps its shape
   await run("DELETE FROM deal_message_reads WHERE user_id=$1");

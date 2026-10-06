@@ -4,8 +4,9 @@ import { ageFromBirthDate } from "./crypto";
 export const MIN_REASON = 10;
 export const MAX_REASON = 300;
 export type UserAction = "suspend" | "unsuspend" | "unlock" | "set_birth_date" | "resend_verification";
-export type AdminAction = "resolve_report" | "view_report" | "view_attachment" | "suspend" | "unsuspend" | "unlock" | "set_birth_date" | "resend_verification" | "retry_payment";
+export type AdminAction = "news_source_add" | "news_source_fetch" | "news_source_enable" | "news_source_disable" | "news_editorial" | "news_hide" | "news_unhide" | "resolve_report" | "view_report" | "view_attachment" | "suspend" | "unsuspend" | "unlock" | "set_birth_date" | "resend_verification" | "retry_payment";
 export const ACTION_LABEL: Record<AdminAction, string> = {
+  news_source_add: "Added a news source", news_source_fetch: "Fetched a news source", news_source_enable: "Enabled a news source", news_source_disable: "Disabled a news source", news_editorial: "Posted editorial news", news_hide: "Hid a news story", news_unhide: "Restored a news story",
   resolve_report: "Resolved a report", view_report: "Viewed a report", view_attachment: "Downloaded a reported attachment",
   suspend: "Suspend account", unsuspend: "Restore account", unlock: "Clear lockout", set_birth_date: "Correct birth date",
   resend_verification: "Resend verification email", retry_payment: "Retry payment processing",

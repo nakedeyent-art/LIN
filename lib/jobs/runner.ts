@@ -3,6 +3,7 @@ import { runAdultTransition, type JobResult } from "./adult-transition";
 import { retryStuckPayments } from "../payments";
 import { paymentsEnabled } from "../stripe";
 import { purgeOldNotifications } from "../notificationsdb";
+import { ingestAll } from "../newsdb";
 
 const LOCK_KEY = 7_345_001;   // arbitrary app-wide advisory-lock id: only one run of the daily jobs at a time
 
@@ -18,6 +19,12 @@ const JOBS: { name: string; run: (o: { dry: boolean }) => Promise<JobResult> }[]
       if (dry || !paymentsEnabled()) return { processed: 0, skipped: 0, failed: 0 };
       const r = await retryStuckPayments();
       return { processed: r.processed, skipped: 0, failed: r.failed };
+    } },
+  // Pulls the admin-configured news sources (each at most every 30 minutes). A source that fails 10 times in a row is switched off.
+  { name: "news-ingest", run: async ({ dry }) => {
+      if (dry) return { processed: 0, skipped: 0, failed: 0 };
+      const r = await ingestAll();
+      return { processed: r.added, skipped: r.failed, failed: 0 };   // a flaky third-party source is shown on /admin/news, not as a failed job
     } },
   // Read notifications expire; expired login sessions and old finished job logs are dropped. Counts only.
   { name: "housekeeping", run: async ({ dry }) => {
