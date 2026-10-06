@@ -1,21 +1,34 @@
 import { db } from "./db";
 import { appUrl, sendMail } from "./mailer";
+import { createHash } from "node:crypto";
 import { THREAD_PAGE } from "./messaging";
+import { MAX_FILES_PER_DEAL } from "./attachments";
 import { messageTitle } from "./notifications";
 import { notifyInApp } from "./notificationsdb";
 
-export type ThreadMessage = { id: number; sender_id: string; sender_name: string; body: string; created_at: Date };
+export type ThreadMessage = {
+  id: number; sender_id: string; sender_name: string; body: string; created_at: Date; hidden: boolean; reported: boolean;
+  files: { id: string; name: string; size: number }[];
+};
+
+const MSG_SELECT = `SELECT m.id::float8 AS id, m.sender_id, u.full_name AS sender_name, m.body, m.created_at, m.hidden_at IS NOT NULL AS hidden,
+       EXISTS (SELECT 1 FROM message_reports r WHERE r.message_id = m.id AND r.reporter_id = $2) AS reported,
+       COALESCE((SELECT json_agg(json_build_object('id', a.id, 'name', a.filename, 'size', a.size_bytes) ORDER BY a.created_at)
+                   FROM deal_attachments a WHERE a.message_id = m.id), '[]'::json) AS files
+  FROM deal_messages m JOIN users u ON u.id = m.sender_id`;
 
 /** Latest messages, oldest first. The caller has already proven the viewer may see this deal. */
-export async function listThread(dealId: string): Promise<{ messages: ThreadMessage[]; total: number }> {
+export async function listThread(dealId: string, viewerId: string): Promise<{ messages: ThreadMessage[]; total: number }> {
   const [m, t] = await Promise.all([
-    db().query(
-      `SELECT * FROM (SELECT m.id::float8 AS id, m.sender_id, u.full_name AS sender_name, m.body, m.created_at
-                        FROM deal_messages m JOIN users u ON u.id = m.sender_id WHERE m.deal_id = $1 ORDER BY m.id DESC LIMIT $2) x ORDER BY id`,
-      [dealId, THREAD_PAGE]),
+    db().query(`SELECT * FROM (${MSG_SELECT} WHERE m.deal_id = $1 ORDER BY m.id DESC LIMIT $3) x ORDER BY id`, [dealId, viewerId, THREAD_PAGE]),
     db().query("SELECT count(*)::int AS n FROM deal_messages WHERE deal_id=$1", [dealId]),
   ]);
   return { messages: m.rows, total: t.rows[0].n };
+}
+
+/** Messages newer than `after`, for the live feed. */
+export async function messagesAfter(dealId: string, viewerId: string, after: number): Promise<ThreadMessage[]> {
+  return (await db().query(`${MSG_SELECT} WHERE m.deal_id = $1 AND m.id > $3 ORDER BY m.id LIMIT 100`, [dealId, viewerId, after])).rows;
 }
 
 export async function markRead(dealId: string, userId: string): Promise<void> {
@@ -41,7 +54,8 @@ export async function unreadByDeal(userId: string): Promise<Map<string, number>>
 }
 
 /** Inserts the message and returns who should get a "you have a message" email (one per unread burst). Rate limit is checked in the same transaction. */
-export async function insertMessage(dealId: string, senderId: string, body: string, maxPerMinute: number): Promise<{ ok: true; emails: string[]; others: string[]; title: string } | { ok: false; limited: true }> {
+export type NewFile = { filename: string; type: string; bytes: Uint8Array };
+export async function insertMessage(dealId: string, senderId: string, body: string, maxPerMinute: number, files: NewFile[] = []): Promise<{ ok: true; emails: string[]; others: string[]; title: string } | { ok: false; limited: true } | { ok: false; error: string }> {
   const client = await db().connect();
   try {
     await client.query("BEGIN");
@@ -61,7 +75,16 @@ export async function insertMessage(dealId: string, senderId: string, body: stri
          FROM p WHERE p.id <> $2 AND p.email NOT LIKE '%@deleted.invalid'`, [dealId, senderId])).rows as
       { id: string; email: string; wants_email: boolean; nothing_unread: boolean }[];
     const title = (await client.query("SELECT title FROM deals WHERE id=$1", [dealId])).rows[0].title as string;
-    await client.query("INSERT INTO deal_messages(deal_id, sender_id, body) VALUES ($1,$2,$3)", [dealId, senderId, body]);
+    if (files.length) {
+      const have = (await client.query("SELECT count(*)::int AS n FROM deal_attachments WHERE deal_id=$1", [dealId])).rows[0].n as number;
+      if (have + files.length > MAX_FILES_PER_DEAL) { await client.query("ROLLBACK"); return { ok: false, error: `This conversation has reached its limit of ${MAX_FILES_PER_DEAL} attachments.` }; }
+    }
+    const mid = (await client.query("INSERT INTO deal_messages(deal_id, sender_id, body) VALUES ($1,$2,$3) RETURNING id", [dealId, senderId, body])).rows[0].id as string;
+    for (const f of files) {
+      await client.query(
+        "INSERT INTO deal_attachments(message_id, deal_id, uploader_id, filename, content_type, size_bytes, sha256, data) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)",
+        [mid, dealId, senderId, f.filename, f.type, f.bytes.length, createHash("sha256").update(f.bytes).digest("hex"), Buffer.from(f.bytes)]);
+    }
     await client.query("COMMIT");
     return { ok: true, emails: people.filter((p) => p.wants_email && p.nothing_unread).map((p) => p.email), others: people.map((p) => p.id), title };
   } catch (e) { await client.query("ROLLBACK").catch(() => {}); throw e; } finally { client.release(); }

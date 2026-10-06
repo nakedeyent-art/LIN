@@ -52,6 +52,7 @@ export default async function DealsPage({ searchParams }: { searchParams: Promis
         {["sponsor", "booster", "gym_owner"].includes(s.role) && (
           <Card title="New offer" wide><Link className="btn" href="/dashboard/athletes">Find athletes</Link></Card>
         )}
+        <Card title="Search" wide><form method="get" action="/dashboard/deals/search" style={{ display: "flex", gap: 8 }}><input type="search" name="q" placeholder="Search deals and messages" maxLength={80} style={{ flex: 1, maxWidth: 360 }} /><button className="btn ghost" type="submit">Search</button></form></Card>
         <Card title="All deals" wide><DealTable deals={deals} viewerId={s.userId} role={s.role} unread={unread} /></Card>
       </Grid>
       <Disclaimer>Compensation must be for real NIL deliverables at fair market value — never for enrollment, recruitment or athletic performance. State and association rules vary; have counsel review before launch.</Disclaimer>

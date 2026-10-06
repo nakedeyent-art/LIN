@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireAccess } from "@/lib/session";
 import { db } from "@/lib/db";
 import { canOffer, displayName, type Level } from "@/lib/deals";
+import { BLOCKED_SQL } from "@/lib/blocksdb";
 import { trackAthlete } from "./actions";
 import { Card, Disclaimer, Grid } from "@/components/ui";
 
@@ -17,7 +18,8 @@ export default async function Athletes({ searchParams }: { searchParams: Promise
         AND (ap.birth_date <= CURRENT_DATE - INTERVAL '18 years' OR EXISTS (
               SELECT 1 FROM guardian_links r WHERE r.athlete_id = u.id))
         AND ($1 = '' OR ap.sport ILIKE $1)
-      ORDER BY u.full_name LIMIT 100`, [sport]);
+        AND NOT ${BLOCKED_SQL("u.id", "$2::uuid")}
+      ORDER BY u.full_name LIMIT 100`, [sport, s.userId]);
   return (
     <>
       <h1>Find Athletes</h1>

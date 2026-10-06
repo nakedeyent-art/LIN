@@ -120,12 +120,30 @@ the sponsor, the athlete and — while the athlete is under 18 — their linked 
 conversation with a sponsor. Guardians lose the thread when the athlete turns 18 (the athlete keeps the full history).
 - Open while an offer is being negotiated, signed, active or finished; closed when an offer is declined, withdrawn or has
   expired. A minor's thread pauses if no guardian is linked.
-- Plain text only (shown escaped, 2000 characters, control/bidi characters stripped), 8 messages per minute per sender per deal.
+- Plain text (shown escaped, 2000 characters, control/bidi characters stripped), 8 messages per minute per sender per deal.
 - Messages can't be edited or deleted (DB trigger). Deleting an account replaces that person's messages with
   "[message removed]" and shows them as "Deleted user"; the other people's messages stay.
 - Email nudges never contain message text, and go once per unread burst per person. Unread counts show on the deals list and deal page.
-- Not built: attachments, reporting/blocking, moderation tooling, real-time updates (refresh to see replies), message search,
-  and any filter for off-platform contact details or inappropriate content.
+- **Live updates:** an open thread polls a small feed every 5 seconds while the tab is visible (no polling in background tabs);
+  new messages appear without a refresh and count as read. Polling rather than websockets keeps it working on serverless hosting.
+- **Attachments:** PNG, JPEG or PDF, 2 MB each, 3 per message, 20 per deal. The file's bytes decide the type (not its name), they
+  are stored in Postgres, and downloads are attachment-only with `nosniff`, a sandbox CSP and no caching, visible to the same people
+  as the thread. **Not virus-scanned**, and Postgres storage should move to object storage before real volume.
+- **Screening:** abusive/sexual language is blocked in every thread; off-platform payment talk is blocked when payments are on;
+  contact details, links and social handles are blocked in threads with a minor. It only blocks (nothing is stored or shown to
+  admins) and it is a speed bump: it can be evaded and can occasionally refuse an innocent message, so the sender's draft is kept.
+- **Reporting:** any person on a deal can report another's message (reason + optional note, 10/day). Moderators see the reported
+  message plus three either side — nothing more of the conversation — and every read is audited.
+- **Blocking:** blocking closes messaging between the two people on every deal they share and stops new offers (and hides the athlete
+  from that sponsor's directory) without telling the other side who blocked whom; deals already underway continue. A minor can block
+  but only a guardian can lift it; a guardian can block for a minor, and that block lapses when the athlete turns 18.
+- **Moderation (admin → Reports):** urgent "risk to a young athlete" reports sort first. Outcomes: dismiss, hide the message (text
+  kept for the record; users see "[removed by a moderator]"), hide + warn, or hide + suspend. Each needs the admin's password and a
+  reason, closes every open report on that message, tells the reporter the outcome in general terms and never tells the sender who reported.
+- **Search:** `/dashboard/deals/search` finds your own deals (title, people) and message text (`"phrases"`, `-exclude`); hidden and
+  removed messages never match; minors are shown as "First L." to people outside the family.
+- Not built: image previews/thumbnails, message reactions or replies, typing indicators, push notifications, automated moderation
+  beyond the screen above (no ML, no image scanning), appeals, moderator roles below full admin, SLA tracking/queues by assignee.
 
 ## Notifications
 An in-app notification centre (`/dashboard/notifications`, with an unread count in the sidebar) sits alongside the emails.

@@ -20,7 +20,7 @@ export async function auditView(adminId: string, userId: string): Promise<void> 
 
 export async function overview() {
   const q = (sql: string) => db().query(sql).then((r) => r.rows);
-  const [users, deals, pays, disputes, jobs, failedJobs, suspended] = await Promise.all([
+  const [users, deals, pays, disputes, jobs, failedJobs, suspended, reports] = await Promise.all([
     q("SELECT role, count(*)::int AS n FROM users WHERE deleted_at IS NULL GROUP BY role ORDER BY role"),
     q("SELECT status, count(*)::int AS n FROM deals GROUP BY status ORDER BY status"),
     q("SELECT status, count(*)::int AS n FROM deal_payments GROUP BY status ORDER BY status"),
@@ -29,8 +29,9 @@ export async function overview() {
     q("SELECT DISTINCT ON (job) job, status, started_at, processed, failed FROM job_runs ORDER BY job, started_at DESC"),
     q("SELECT count(*)::int AS n FROM job_runs WHERE status='failed' AND started_at > NOW() - INTERVAL '7 days'"),
     q("SELECT count(*)::int AS n FROM users WHERE suspended_at IS NOT NULL AND deleted_at IS NULL"),
+    q("SELECT count(*)::int AS n, count(*) FILTER (WHERE reason='safety_minor')::int AS urgent FROM message_reports WHERE status='open'"),
   ]);
-  return { users, deals, pays, openDisputes: disputes[0].n as number, jobs, failedJobs: failedJobs[0].n as number, suspended: suspended[0].n as number };
+  return { users, deals, pays, openDisputes: disputes[0].n as number, jobs, failedJobs: failedJobs[0].n as number, suspended: suspended[0].n as number, openReports: reports[0].n as number, urgentReports: reports[0].urgent as number };
 }
 
 export type UserHit = { id: string; email: string; full_name: string; role: string; created_at: Date; verified: boolean; suspended: boolean; deleted: boolean; is_admin: boolean };
@@ -96,4 +97,41 @@ export async function auditLog(limit = 100) {
 
 export async function jobRuns(limit = 40) {
   return (await db().query("SELECT job, status, started_at, finished_at, processed, skipped, failed, error FROM job_runs ORDER BY started_at DESC LIMIT $1", [limit])).rows;
+}
+
+// ---------------- moderation ----------------
+export async function reportQueue(status: "open" | "resolved") {
+  return (await db().query(
+    `SELECT r.id, r.reason, r.status, r.created_at, r.deal_id, rep.full_name AS reporter, snd.full_name AS sender, snd.id AS sender_id,
+            (r.reason = 'safety_minor') AS urgent,
+            (SELECT count(*)::int FROM message_reports x WHERE x.message_id = r.message_id) AS reports_on_message
+       FROM message_reports r JOIN deal_messages m ON m.id = r.message_id JOIN users snd ON snd.id = m.sender_id JOIN users rep ON rep.id = r.reporter_id
+      WHERE ${status === "open" ? "r.status = 'open'" : "r.status <> 'open'"}
+      ORDER BY (r.reason = 'safety_minor') DESC, r.created_at ${status === "open" ? "ASC" : "DESC"} LIMIT 100`)).rows;
+}
+
+/** One report with the reported message and up to three messages either side — nothing else of the conversation. */
+export async function reportDetail(id: string) {
+  if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
+  const r = (await db().query(
+    `SELECT r.*, rep.full_name AS reporter_name, rep.email AS reporter_email, m.sender_id, snd.full_name AS sender_name, snd.email AS sender_email, snd.suspended_at, snd.is_admin AS sender_is_admin,
+            m.hidden_at, d.title AS deal_title,
+            COALESCE(ap.birth_date > CURRENT_DATE - INTERVAL '18 years', FALSE) AS athlete_minor, d.athlete_id
+       FROM message_reports r JOIN deal_messages m ON m.id = r.message_id JOIN users snd ON snd.id = m.sender_id JOIN users rep ON rep.id = r.reporter_id
+       JOIN deals d ON d.id = r.deal_id LEFT JOIN athlete_profiles ap ON ap.user_id = d.athlete_id WHERE r.id = $1`, [id])).rows[0];
+  if (!r) return null;
+  const context = (await db().query(
+    `SELECT m.id::float8 AS id, u.full_name AS name, m.sender_id, m.body, m.created_at, m.hidden_at IS NOT NULL AS hidden, (m.id = $2) AS reported,
+            COALESCE((SELECT json_agg(json_build_object('id', a.id, 'name', a.filename, 'size', a.size_bytes)) FROM deal_attachments a WHERE a.message_id = m.id), '[]'::json) AS files
+       FROM deal_messages m JOIN users u ON u.id = m.sender_id
+      WHERE m.deal_id = $1 AND m.id IN (
+        SELECT id FROM (SELECT id FROM deal_messages WHERE deal_id=$1 AND id < $2 ORDER BY id DESC LIMIT 3) before
+        UNION ALL SELECT $2::bigint
+        UNION ALL SELECT id FROM (SELECT id FROM deal_messages WHERE deal_id=$1 AND id > $2 ORDER BY id LIMIT 3) after)
+      ORDER BY m.id`, [r.deal_id, r.message_id])).rows;
+  const stats = (await db().query(
+    `SELECT (SELECT count(*)::int FROM deal_messages WHERE sender_id=$1 AND hidden_at IS NOT NULL) AS hidden_before,
+            (SELECT count(*)::int FROM message_reports x JOIN deal_messages m ON m.id=x.message_id WHERE m.sender_id=$1 AND x.status='open') AS open_reports,
+            (SELECT count(*)::int FROM user_blocks WHERE blocked_id=$1) AS blocks_received`, [r.sender_id])).rows[0];
+  return { r, context, stats };
 }

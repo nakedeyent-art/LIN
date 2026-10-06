@@ -24,6 +24,15 @@ describe("canPostMessage", () => {
   it("a guardian has no voice once the athlete is an adult", () =>
     expect(canPostMessage({ ...base, who: "guardian" }).ok).toBe(false));
 });
+describe("blocked", () => {
+  it("closes the thread for everyone with a deliberately vague message", () => {
+    for (const who of ["counterparty", "athlete", "guardian"] as const) {
+      const r = canPostMessage({ ...base, who, athleteIsMinor: who === "guardian", athleteHasGuardian: true, blocked: true });
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.error).not.toMatch(/block/i);
+    }
+  });
+});
 describe("cleanBody", () => {
   it("trims and normalises", () => expect(cleanBody("  hi\r\nthere \r\n\r\n\r\n\r\nbye  ")).toEqual({ ok: true, body: "hi\nthere\n\nbye" }));
   it("rejects empty / whitespace / control-only", () => {

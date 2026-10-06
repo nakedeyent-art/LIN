@@ -6,6 +6,7 @@ export const MAX_MESSAGE_CHARS = 2000;
 export const MAX_MESSAGES_PER_MINUTE = 8;
 export const THREAD_PAGE = 200;
 export const REMOVED_BODY = "[message removed]";
+export const HIDDEN_BODY = "[removed by a moderator]";
 
 export type PostCheck = { ok: true } | { ok: false; error: string };
 
@@ -15,10 +16,11 @@ export type PostCheck = { ok: true } | { ok: false; error: string };
  * who can read it: no guardian, no messages.
  */
 export function canPostMessage(d: {
-  who: Capacity | null; athleteIsMinor: boolean; athleteHasGuardian: boolean; status: DealStatus; expired: boolean;
+  who: Capacity | null; athleteIsMinor: boolean; athleteHasGuardian: boolean; status: DealStatus; expired: boolean; blocked?: boolean;
 }): PostCheck {
   if (!d.who) return { ok: false, error: "Only the people on this deal can message here." };
   if (d.who === "guardian" && !d.athleteIsMinor) return { ok: false, error: "Guardian access ended when the athlete turned 18." };
+  if (d.blocked) return { ok: false, error: "Messaging isn't available on this deal right now." };   // deliberately vague: never reveals who blocked whom
   if (d.status === "declined" || d.status === "withdrawn") return { ok: false, error: "This offer ended, so the conversation is closed." };
   if (isOpen(d.status) && d.expired) return { ok: false, error: "This offer has expired, so the conversation is closed." };
   if (d.athleteIsMinor && !d.athleteHasGuardian) return { ok: false, error: "Messaging is paused until a parent/guardian is linked to this athlete." };
@@ -39,3 +41,5 @@ export function cleanBody(raw: string): { ok: true; body: string } | { ok: false
 export const rateLimited = (recentCount: number) => recentCount >= MAX_MESSAGES_PER_MINUTE;
 
 export const CAPACITY_LABEL: Record<Capacity, string> = { counterparty: "Sponsor", athlete: "Athlete", guardian: "Parent/guardian" };
+
+export type PostState = { error?: string; sent?: number; draft?: string };

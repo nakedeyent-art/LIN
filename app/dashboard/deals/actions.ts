@@ -8,6 +8,7 @@ import {
 } from "@/lib/deals";
 import { createContractForDeal, voidContract } from "@/lib/contractdb";
 import { notifyDealParties, refundPayment, releasePayment } from "@/lib/payments";
+import { pairBlocked } from "@/lib/blocksdb";
 import { paymentsEnabled, stripe } from "@/lib/stripe";
 import { capacityOn, dealContext, hasLinkedGuardian, notifyDeal, type DealRow } from "@/lib/dealsdb";
 
@@ -36,6 +37,7 @@ export async function createOffer(formData: FormData) {
        FROM athlete_profiles ap JOIN users u ON u.id = ap.user_id WHERE ap.user_id = $1`, [athleteId])).rows[0];
   // Same visibility as the directory: an athlete who isn't listed can't be approached.
   if (!a || !a.discoverable || !a.verified || (a.minor && !(await hasLinkedGuardian(athleteId)))) back("This athlete isn't available for offers.");
+  if (await pairBlocked(athleteId, s.userId)) back("This athlete isn't available for offers.");   // never says why
   const ok = canOffer(s.role, a.level as Level);
   if (!ok.ok) back(ok.error);
 

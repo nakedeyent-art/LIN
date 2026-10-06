@@ -11,7 +11,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         <div className="brand">LIN</div>
         <span className="role-chip">Admin</span>
         <nav>
-          <Link href="/admin">Overview</Link><Link href="/admin/users">Users</Link><Link href="/admin/deals">Deals</Link>
+          <Link href="/admin">Overview</Link><Link href="/admin/users">Users</Link><Link href="/admin/deals">Deals</Link><Link href="/admin/reports">Reports</Link>
           <Link href="/admin/jobs">Jobs</Link><Link href="/admin/audit">Audit log</Link><Link href="/dashboard">← My dashboard</Link>
         </nav>
         <p className="muted" style={{ marginTop: 16 }}>{s.email}</p>

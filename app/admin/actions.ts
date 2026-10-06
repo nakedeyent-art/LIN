@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/session";
 import { checkPassword } from "@/lib/reauth";
-import { canActOnUser, validateReason, type AdminAction } from "@/lib/admin";
+import { canActOnUser, validateReason, type UserAction } from "@/lib/admin";
 import { audit, targetOf, userForAdmin } from "@/lib/admindb";
 import { sendVerificationEmail } from "@/lib/verification";
 import { unlistIfNoGuardian } from "@/lib/guardians";
@@ -23,7 +23,7 @@ async function gate(f: FormData, back: (k: "msg" | "error", m: string) => never)
 }
 
 export async function adminUserAction(formData: FormData) {
-  const id = str(formData, "user_id"), action = str(formData, "action") as AdminAction;
+  const id = str(formData, "user_id"), action = str(formData, "action") as UserAction;
   if (!UUID.test(id)) redirect("/admin/users");
   const back = (k: "msg" | "error", m: string): never => redirect(`/admin/users/${id}?${k}=${encodeURIComponent(m)}`);
   const { s, reason } = await gate(formData, back);
@@ -36,7 +36,7 @@ export async function adminUserAction(formData: FormData) {
     if (!u) { await client.query("ROLLBACK"); return redirect("/admin/users"); }
     const birth = str(formData, "birth_date");
     if (!["suspend", "unsuspend", "unlock", "set_birth_date", "resend_verification"].includes(action)) { await client.query("ROLLBACK"); return back("error", "Unknown action."); }
-    const ok = canActOnUser(s.userId, targetOf(u), action as Exclude<AdminAction, "retry_payment">, birth);
+    const ok = canActOnUser(s.userId, targetOf(u), action as UserAction, birth);
     if (!ok.ok) { await client.query("ROLLBACK"); return back("error", ok.error); }
 
     let detail = reason, msg = "Done.";

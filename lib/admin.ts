@@ -3,8 +3,10 @@ import { ageFromBirthDate } from "./crypto";
 
 export const MIN_REASON = 10;
 export const MAX_REASON = 300;
-export type AdminAction = "suspend" | "unsuspend" | "unlock" | "set_birth_date" | "resend_verification" | "retry_payment";
+export type UserAction = "suspend" | "unsuspend" | "unlock" | "set_birth_date" | "resend_verification";
+export type AdminAction = "resolve_report" | "view_report" | "view_attachment" | "suspend" | "unsuspend" | "unlock" | "set_birth_date" | "resend_verification" | "retry_payment";
 export const ACTION_LABEL: Record<AdminAction, string> = {
+  resolve_report: "Resolved a report", view_report: "Viewed a report", view_attachment: "Downloaded a reported attachment",
   suspend: "Suspend account", unsuspend: "Restore account", unlock: "Clear lockout", set_birth_date: "Correct birth date",
   resend_verification: "Resend verification email", retry_payment: "Retry payment processing",
 };
@@ -21,7 +23,7 @@ export type Check = { ok: true } | { ok: false; error: string };
 const no = (error: string): Check => ({ ok: false, error });
 
 /** Admins can't act on themselves or on other admins (admin rights are managed with scripts/make-admin.mjs), or on deleted accounts. */
-export function canActOnUser(adminId: string, t: Target, action: Exclude<AdminAction, "retry_payment">, newBirth?: string): Check {
+export function canActOnUser(adminId: string, t: Target, action: UserAction, newBirth?: string): Check {
   if (t.deleted) return no("This account has been deleted.");
   if (action === "suspend" || action === "unsuspend" || action === "set_birth_date") {
     if (t.id === adminId) return no("You can't do that to your own account.");
