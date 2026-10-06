@@ -8,6 +8,7 @@ import Link from "next/link";
 import { db } from "@/lib/db";
 import { listDeals } from "@/lib/dealsdb";
 import { DealTable } from "@/components/deal-ui";
+import { unreadByDeal } from "@/lib/messagesdb";
 
 export default async function DashboardHome({ searchParams }: { searchParams: Promise<{ linked?: string; invite?: string; connected?: string }> }) {
   const s = await requireUser();
@@ -44,7 +45,7 @@ export default async function DashboardHome({ searchParams }: { searchParams: Pr
       {g && g.linked.length > 0 && <p className="ok">Guardian linked: {g.linked.map((l) => l.name).join(", ")}</p>}
       {deals && (
         <Grid><Card title="Deals" wide>
-          <DealTable deals={deals.slice(0, 5)} viewerId={s.userId} role={s.role} />
+          <DealTable deals={deals.slice(0, 5)} viewerId={s.userId} role={s.role} unread={await unreadByDeal(s.userId)} />
           <p><Link href="/dashboard/deals" style={{ textDecoration: "underline" }}>All deals →</Link></p>
         </Card></Grid>
       )}

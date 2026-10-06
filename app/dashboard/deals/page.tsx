@@ -7,12 +7,14 @@ import { getPayoutAccount } from "@/lib/payments";
 import { paymentsEnabled } from "@/lib/stripe";
 import { startPayouts } from "./payment-actions";
 import { DealTable } from "@/components/deal-ui";
+import { unreadByDeal } from "@/lib/messagesdb";
 import { setDiscoverable } from "./actions";
 
 export default async function DealsPage({ searchParams }: { searchParams: Promise<{ error?: string; msg?: string }> }) {
   const s = await requireAccess("/dashboard/deals");
   const { error, msg } = await searchParams;
   const deals = await listDeals(s.userId);
+  const unread = await unreadByDeal(s.userId);
   const listed = s.role === "athlete"
     ? (await db().query("SELECT discoverable FROM athlete_profiles WHERE user_id=$1", [s.userId])).rows[0]?.discoverable as boolean | undefined
     : undefined;
@@ -50,7 +52,7 @@ export default async function DealsPage({ searchParams }: { searchParams: Promis
         {["sponsor", "booster", "gym_owner"].includes(s.role) && (
           <Card title="New offer" wide><Link className="btn" href="/dashboard/athletes">Find athletes</Link></Card>
         )}
-        <Card title="All deals" wide><DealTable deals={deals} viewerId={s.userId} role={s.role} /></Card>
+        <Card title="All deals" wide><DealTable deals={deals} viewerId={s.userId} role={s.role} unread={unread} /></Card>
       </Grid>
       <Disclaimer>Compensation must be for real NIL deliverables at fair market value — never for enrollment, recruitment or athletic performance. State and association rules vary; have counsel review before launch.</Disclaimer>
     </>

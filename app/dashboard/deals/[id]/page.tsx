@@ -12,6 +12,7 @@ import { paymentsEnabled } from "@/lib/stripe";
 import { formatBps } from "@/lib/money";
 import { Badge, Card, Disclaimer, Grid, List } from "@/components/ui";
 import { athleteLabel, StatusBadge } from "@/components/deal-ui";
+import { unreadByDeal } from "@/lib/messagesdb";
 import { dealAction } from "../actions";
 import { claimPayee, fundDeal } from "../payment-actions";
 
@@ -40,6 +41,7 @@ export default async function DealDetail({ params, searchParams }: {
   const k = await getContract(d.id);
   const payee = await payeeInfo(d.id);
   const disputed = pay ? (await db().query("SELECT 1 FROM payment_events WHERE payment_id=$1 AND action='dispute_opened' AND NOT EXISTS (SELECT 1 FROM payment_events e2 WHERE e2.payment_id=$1 AND e2.action='dispute_closed' AND e2.created_at > payment_events.created_at) LIMIT 1", [pay.id])).rowCount : 0;
+  const unread = (await unreadByDeal(s.userId)).get(d.id) ?? 0;
   const mySig = k?.signatures.some((x) => x.userId === s.userId);
   const sign = k ? canSign({ who, athleteIsMinor: ctx.athleteIsMinor, status: d.status, expired: ctx.expired, voided: !!k.voidedAt, alreadySigned: !!mySig }) : null;
   const athleteSide = (who === "athlete" && !d.athlete_minor) || who === "guardian";
@@ -71,6 +73,11 @@ export default async function DealDetail({ params, searchParams }: {
         <Card title="Deliverables" wide><p style={{ whiteSpace: "pre-wrap" }}>{d.deliverables}</p>
           {d.attested_at && <p className="muted">Offerer confirmed this compensation is for NIL deliverables only ({fmt(d.attested_at)}).</p>}
           {d.expires_at && ["offered", "guardian_review", "awaiting_signature"].includes(d.status) && <p className="muted">{d.status === "awaiting_signature" ? "Signing" : "Offer"} expires {fmt(d.expires_at)}.</p>}
+        </Card>
+
+        <Card title="Messages" wide>
+          <p>{unread > 0 ? <Badge tone="yellow">{unread} unread</Badge> : <span className="muted">Talk to the other people on this deal.</span>}{d.athlete_minor ? <span className="muted"> Parents/guardians can read every message.</span> : null}</p>
+          <p><Link className="btn" href={`/dashboard/deals/${d.id}/messages`}>Open messages</Link></p>
         </Card>
 
         {k && (

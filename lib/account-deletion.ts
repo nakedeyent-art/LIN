@@ -49,6 +49,8 @@ export async function purgeAndAnonymize(client: PoolClient, id: string, email: s
   await run("DELETE FROM events WHERE organizer_id=$1");
   await run("DELETE FROM athlete_profiles WHERE user_id=$1");
   await run("DELETE FROM manager_declarations WHERE manager_id=$1");
+  await run("UPDATE deal_messages SET body='[message removed]' WHERE sender_id=$1");   // keep the thread intact for the others; the words go
+  await run("DELETE FROM deal_message_reads WHERE user_id=$1");
   await run("DELETE FROM payout_accounts WHERE user_id=$1");   // the Stripe account itself stays; we just forget the link
   // Signed agreements are kept as records of the transaction (typed name + time + document hash); only the signer's network metadata is scrubbed.
   await run("UPDATE contract_signatures SET ip=NULL, user_agent=NULL WHERE signer_user_id=$1");

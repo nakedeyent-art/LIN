@@ -114,6 +114,19 @@ Deal flow: offer → athlete accepts → (minor: guardian approves) → **both s
 - **Not built:** automatic dispute handling (disputes are shown as a warning only), syncing refunds made in the Stripe
   dashboard, tax forms (1099), custodial rules for paying minors, PDF output, admin/support tooling, money-transmitter review.
 
+## Messaging
+Each deal has one shared thread (`/dashboard/deals/[id]/messages`) visible to exactly the people who can see the deal:
+the sponsor, the athlete and — while the athlete is under 18 — their linked guardians, so a minor never has a private
+conversation with a sponsor. Guardians lose the thread when the athlete turns 18 (the athlete keeps the full history).
+- Open while an offer is being negotiated, signed, active or finished; closed when an offer is declined, withdrawn or has
+  expired. A minor's thread pauses if no guardian is linked.
+- Plain text only (shown escaped, 2000 characters, control/bidi characters stripped), 8 messages per minute per sender per deal.
+- Messages can't be edited or deleted (DB trigger). Deleting an account replaces that person's messages with
+  "[message removed]" and shows them as "Deleted user"; the other people's messages stay.
+- Email nudges never contain message text, and go once per unread burst per person. Unread counts show on the deals list and deal page.
+- Not built: attachments, reporting/blocking, moderation tooling, real-time updates (refresh to see replies), message search,
+  and any filter for off-platform contact details or inappropriate content.
+
 ## Scheduling the jobs
 Set `CRON_SECRET` (e.g. `openssl rand -hex 32`) and have *any* scheduler call the endpoint once a day:
 ```
@@ -154,7 +167,7 @@ catches up). Add new jobs to `JOBS` in `lib/jobs/runner.ts` — each must be ide
 - Dashboard rollups run a few batched queries per page load; fine for hundreds of athletes per viewer, not thousands.
 
 ## Next steps
-1. Messaging; more scheduled jobs (expiring offers/invites, session and token cleanup)
+1. More scheduled jobs (expiring offers/invites, session and token cleanup)
 2. Credential verification and admin/support tooling (disputes, restoring accounts); file uploads for proof of study and form videos
 3. SIS integrations (Canvas, Google Classroom, PowerSchool), OCR transcript upload
 4. Wearable sync (Apple Health, Health Connect, WHOOP); AI food-photo macros

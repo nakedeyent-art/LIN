@@ -18,14 +18,14 @@ export function StatusBadge({ d }: { d: DealRow }) {
   return <Badge tone={statusTone(d.status, ex)}>{ex ? "Expired" : STATUS_LABEL[d.status]}</Badge>;
 }
 
-export function DealTable({ deals, viewerId, role }: { deals: DealRow[]; viewerId: string; role: string }) {
+export function DealTable({ deals, viewerId, role, unread }: { deals: DealRow[]; viewerId: string; role: string; unread?: Map<string, number> }) {
   if (!deals.length) return <p className="muted">No deals yet.</p>;
   return (
     <table>
       <thead><tr><th>Deal</th><th>{role === "athlete" || role === "parent" ? "From" : "Athlete"}</th><th>Amount</th><th>Status</th></tr></thead>
       <tbody>{deals.map((d) => (
         <tr key={d.id}>
-          <td><Link href={`/dashboard/deals/${d.id}`} style={{ textDecoration: "underline" }}>{d.title}</Link></td>
+          <td><Link href={`/dashboard/deals/${d.id}`} style={{ textDecoration: "underline" }}>{d.title}</Link>{unread?.get(d.id) ? <> <Badge tone="yellow">{unread.get(d.id)} new message{unread.get(d.id) === 1 ? "" : "s"}</Badge></> : null}</td>
           <td>{role === "athlete" || role === "parent" ? d.counterparty_name : athleteLabel(d, viewerId, false)}</td>
           <td>{formatCents(d.amount_cents)}</td>
           <td><StatusBadge d={d} /></td>
