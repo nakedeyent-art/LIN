@@ -20,7 +20,7 @@ export async function auditView(adminId: string, userId: string): Promise<void> 
 
 export async function overview() {
   const q = (sql: string) => db().query(sql).then((r) => r.rows);
-  const [users, deals, pays, disputes, jobs, failedJobs, suspended, reports] = await Promise.all([
+  const [users, deals, pays, disputes, jobs, failedJobs, suspended, reports, creports] = await Promise.all([
     q("SELECT role, count(*)::int AS n FROM users WHERE deleted_at IS NULL GROUP BY role ORDER BY role"),
     q("SELECT status, count(*)::int AS n FROM deals GROUP BY status ORDER BY status"),
     q("SELECT status, count(*)::int AS n FROM deal_payments GROUP BY status ORDER BY status"),
@@ -30,8 +30,9 @@ export async function overview() {
     q("SELECT count(*)::int AS n FROM job_runs WHERE status='failed' AND started_at > NOW() - INTERVAL '7 days'"),
     q("SELECT count(*)::int AS n FROM users WHERE suspended_at IS NOT NULL AND deleted_at IS NULL"),
     q("SELECT count(*)::int AS n, count(*) FILTER (WHERE reason='safety_minor')::int AS urgent FROM message_reports WHERE status='open'"),
+    q("SELECT count(*)::int AS n, count(*) FILTER (WHERE reason='safety_minor')::int AS urgent FROM content_reports WHERE status='open'"),
   ]);
-  return { users, deals, pays, openDisputes: disputes[0].n as number, jobs, failedJobs: failedJobs[0].n as number, suspended: suspended[0].n as number, openReports: reports[0].n as number, urgentReports: reports[0].urgent as number };
+  return { users, deals, pays, openDisputes: disputes[0].n as number, jobs, failedJobs: failedJobs[0].n as number, suspended: suspended[0].n as number, openReports: reports[0].n as number, urgentReports: reports[0].urgent as number, openContent: creports[0].n as number, urgentContent: creports[0].urgent as number };
 }
 
 export type UserHit = { id: string; email: string; full_name: string; role: string; created_at: Date; verified: boolean; suspended: boolean; deleted: boolean; is_admin: boolean };
@@ -134,4 +135,38 @@ export async function reportDetail(id: string) {
             (SELECT count(*)::int FROM message_reports x JOIN deal_messages m ON m.id=x.message_id WHERE m.sender_id=$1 AND x.status='open') AS open_reports,
             (SELECT count(*)::int FROM user_blocks WHERE blocked_id=$1) AS blocks_received`, [r.sender_id])).rows[0];
   return { r, context, stats };
+}
+
+// ---------------- post & comment reports ----------------
+export async function contentQueue(status: "open" | "resolved") {
+  return (await db().query(
+    `SELECT r.id, r.kind, r.reason, r.status, r.created_at, rep.full_name AS reporter, snd.full_name AS author, (r.reason = 'safety_minor') AS urgent
+       FROM content_reports r JOIN users rep ON rep.id = r.reporter_id
+       JOIN users snd ON snd.id = COALESCE((SELECT c.author_id FROM post_comments c WHERE c.id = r.comment_id), (SELECT p.author_id FROM posts p WHERE p.id = r.post_id))
+      WHERE ${status === "open" ? "r.status = 'open'" : "r.status <> 'open'"}
+      ORDER BY (r.reason = 'safety_minor') DESC, r.created_at ${status === "open" ? "ASC" : "DESC"} LIMIT 100`)).rows;
+}
+
+export async function contentDetail(id: string) {
+  if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
+  const r = (await db().query(
+    `SELECT r.*, rep.full_name AS reporter_name, rep.email AS reporter_email, p.author_id AS post_author, p.body AS post_body, p.created_at AS post_at, p.hidden_at AS post_hidden,
+            EXISTS (SELECT 1 FROM post_images i WHERE i.post_id = p.id) AS has_image,
+            c.author_id AS comment_author, c.body AS comment_body, c.hidden_at AS comment_hidden,
+            COALESCE(c.author_id, p.author_id) AS sender_id, su.full_name AS sender_name, su.email AS sender_email, su.suspended_at, su.is_admin AS sender_is_admin,
+            EXISTS (SELECT 1 FROM athlete_profiles ap WHERE ap.user_id IN (p.author_id, COALESCE(c.author_id, p.author_id)) AND ap.birth_date > CURRENT_DATE - INTERVAL '18 years') AS involves_minor
+       FROM content_reports r JOIN users rep ON rep.id = r.reporter_id JOIN posts p ON p.id = r.post_id LEFT JOIN post_comments c ON c.id = r.comment_id
+       JOIN users su ON su.id = COALESCE(c.author_id, p.author_id) WHERE r.id = $1`, [id])).rows[0];
+  if (!r) return null;
+  const comments = r.kind === "comment" ? (await db().query(
+    `SELECT c.id::float8 AS id, u.full_name AS name, c.body, c.created_at, (c.id = $2) AS reported, c.hidden_at IS NOT NULL AS hidden
+       FROM post_comments c JOIN users u ON u.id = c.author_id
+      WHERE c.post_id = $1 AND c.id IN (
+        SELECT id FROM (SELECT id FROM post_comments WHERE post_id=$1 AND id < $2 ORDER BY id DESC LIMIT 3) b
+        UNION ALL SELECT $2::bigint
+        UNION ALL SELECT id FROM (SELECT id FROM post_comments WHERE post_id=$1 AND id > $2 ORDER BY id LIMIT 3) a) ORDER BY c.id`, [r.post_id, r.comment_id])).rows : [];
+  const stats = (await db().query(
+    `SELECT (SELECT count(*)::int FROM posts WHERE author_id=$1 AND hidden_at IS NOT NULL) + (SELECT count(*)::int FROM post_comments WHERE author_id=$1 AND hidden_at IS NOT NULL) AS hidden_before,
+            (SELECT count(*)::int FROM user_blocks WHERE blocked_id=$1) AS blocks_received`, [r.sender_id])).rows[0];
+  return { r, comments, stats };
 }

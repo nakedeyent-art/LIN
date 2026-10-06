@@ -2,6 +2,7 @@
 export const MAX_FILE_BYTES = 2 * 1024 * 1024;
 export const MAX_FILES_PER_MESSAGE = 3;
 export const MAX_FILES_PER_DEAL = 20;
+import { stripImage } from "./images";
 export type Sniffed = { type: "image/png" | "image/jpeg" | "application/pdf"; ext: "png" | "jpg" | "pdf" };
 
 export function sniff(b: Uint8Array): Sniffed | null {
@@ -32,7 +33,10 @@ export function checkUploads(files: Upload[], alreadyOnDeal: number): Checked {
     if (f.bytes.length > MAX_FILE_BYTES) return { ok: false, error: `Each file must be under ${formatBytes(MAX_FILE_BYTES)}.` };
     const s = sniff(f.bytes);
     if (!s) return { ok: false, error: "Only PNG, JPEG or PDF files can be attached." };
-    out.push({ filename: safeFilename(f.name, s.ext), type: s.type, bytes: f.bytes });
+    // Photos carry hidden location/device data; strip it before storing (a damaged image is refused rather than stored as-is).
+    const clean = stripImage(s.type, f.bytes);
+    if (!clean) return { ok: false, error: "That image looks damaged. Try saving it again and re-attaching." };
+    out.push({ filename: safeFilename(f.name, s.ext), type: s.type, bytes: clean });
   }
   return { ok: true, files: out };
 }

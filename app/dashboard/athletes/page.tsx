@@ -34,7 +34,7 @@ export default async function Athletes({ searchParams }: { searchParams: Promise
             {rows.map((a) => {
               const ok = canOffer(s.role, a.level as Level);
               return <tr key={a.id}>
-                <td>{displayName(a.full_name, a.minor)}</td>
+                <td><Link href={`/dashboard/feed/u/${a.id}`} style={{ textDecoration: "underline" }}>{displayName(a.full_name, a.minor)}</Link></td>
                 <td>{a.sport}{a.position ? ` · ${a.position}` : ""}{a.state ? ` · ${a.state}` : ""}</td>
                 <td>{String(a.level).replace("_", " ")}{a.grad_year ? ` (${a.grad_year})` : ""}</td>
                 <td>{s.role === "recruiter"

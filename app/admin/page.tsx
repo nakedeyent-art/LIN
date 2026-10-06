@@ -17,6 +17,7 @@ export default async function AdminHome() {
         <Card title="Deals"><table><tbody>{o.deals.length ? o.deals.map((r) => <tr key={r.status}><td><Link href={`/admin/deals?status=${r.status}`}>{r.status}</Link></td><td>{r.n}</td></tr>) : <tr><td className="muted">No deals yet.</td></tr>}</tbody></table></Card>
         <Card title="Needs attention">
           <p>{o.urgentReports > 0 ? <Badge tone="red">{o.urgentReports} urgent message report{o.urgentReports > 1 ? "s" : ""}</Badge> : o.openReports > 0 ? <Badge tone="yellow">{o.openReports} open message report{o.openReports > 1 ? "s" : ""}</Badge> : <Badge tone="green">No open message reports</Badge>} <Link href="/admin/reports">Review</Link></p>
+          <p>{o.urgentContent > 0 ? <Badge tone="red">{o.urgentContent} urgent post/comment report{o.urgentContent > 1 ? "s" : ""}</Badge> : o.openContent > 0 ? <Badge tone="yellow">{o.openContent} open post/comment report{o.openContent > 1 ? "s" : ""}</Badge> : <Badge tone="green">No open post/comment reports</Badge>} <Link href="/admin/content-reports">Review</Link></p>
           <p>{o.openDisputes > 0 ? <Badge tone="red">{o.openDisputes} open card dispute{o.openDisputes > 1 ? "s" : ""}</Badge> : <Badge tone="green">No open disputes</Badge>}</p>
           <p>{o.pays.filter((p) => ["releasing", "refunding"].includes(p.status)).reduce((a, p) => a + p.n, 0) > 0
             ? <Badge tone="yellow">Payments stuck mid-processing</Badge> : <Badge tone="green">No payments mid-processing</Badge>}</p>

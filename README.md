@@ -145,6 +145,39 @@ conversation with a sponsor. Guardians lose the thread when the athlete turns 18
 - Not built: image previews/thumbnails, message reactions or replies, typing indicators, push notifications, automated moderation
   beyond the screen above (no ML, no image scanning), appeals, moderator roles below full admin, SLA tracking/queues by assignee.
 
+## News feed
+`/dashboard/news` (in every role's navigation): high-school and college stories tagged automatically as **rankings, reclassification,
+graduating seniors & commitments, redshirts, powerhouse programs** or general, with level and sport detected from the text. Readers
+filter by topic, level, sport, time window (today / week / 30 days) and search, and can **save their filters as their default**.
+- **Where stories come from:** an admin adds RSS/Atom feeds under *Admin → News* (and can post editorial items). **LIN ships with no
+  sources and no licence to any publisher's content** — only add feeds you have the right to display. LIN stores the headline, a short
+  plain-text excerpt (240 characters) and a link back; never full articles. Admins can hide any story.
+- **Ingestion** runs as the `news-ingest` job (each source at most every 30 minutes; a source that fails 10 times in a row is switched
+  off and shown as such; a flaky publisher never fails the job). Call `/api/cron/daily` **hourly** to keep it fresh. Fetching is
+  https-only, public-IP-only (re-checked on every redirect), 8 s / 1 MB bounded, XML entity expansion off, and only `http(s)` links are kept.
+- Tagging is keyword-based, not editorial judgement: expect misses and the occasional wrong tag. Rankings are the publishers' opinions.
+- Not built: licensed data/APIs (scores, stats, official rankings), per-team or per-athlete following, a daily digest email, bookmarks.
+
+## Social feed and music status
+`/dashboard/feed`: posts (500 characters and an optional PNG/JPEG picture), a **Following** tab and a **Discover** tab, likes, comments,
+profiles (`/dashboard/feed/u/…`) with a status line and a music link, follow/unfollow, block and report.
+- **Minors:** an athlete under 18 is shown as "First L."; their posts, status and music reach only themselves, their guardians and
+  followers **a guardian has approved** (*Feed → Follow requests*), and they never appear in Discover. Boosters can't follow minors
+  (same rule as offers). Contact details, links and social handles are blocked in any post or comment by or on a minor. A minor can block
+  someone for safety, but only a guardian lifts it. Guardian authority ends at 18 like everywhere else.
+- **Pictures:** EXIF/XMP/GPS and PNG text chunks are stripped before storing (also for message attachments), served sandboxed with
+  `nosniff`. Stored in Postgres; not scanned for illegal or unsafe content — **add image scanning before real users**.
+- **Music:** no account linking. Users paste a Spotify or Apple Music link; it's validated strictly and only the parsed parts are kept
+  (tracking parameters are dropped), and the official embed URL is rebuilt from them. The player loads **only after a click**, so
+  viewing a profile never contacts Spotify or Apple. Not built: live "now playing" via the Spotify/Apple APIs (needs developer
+  credentials and OAuth), titles/artwork pulled from the providers, and any audio hosted by LIN.
+- **Safety:** the message screen applies (abuse everywhere; contact details around minors); posts and comments can be reported
+  (*Admin → Post reports*: hide, hide + warn, hide + suspend, all with password + reason + audit); blocks hide each other's posts,
+  comments and profile and remove follows (a block also closes deal messaging between the same two people).
+- **Not built:** short-form **video** (the TikTok part — needs storage, transcoding and video moderation), reposts/sharing, hashtags,
+  mentions, stories, direct messages outside deals, trending/algorithmic ranking (Discover is simply newest adults' posts), notifications
+  for likes, and automated moderation beyond keyword screening.
+
 ## Notifications
 An in-app notification centre (`/dashboard/notifications`, with an unread count in the sidebar) sits alongside the emails.
 Deal changes, payment events, new messages and the "you're 18" transition create notifications; repeated events (five
