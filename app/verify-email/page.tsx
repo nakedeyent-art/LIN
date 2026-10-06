@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/session";
 import { logout } from "../login/actions";
-import { resendVerification } from "../verify/actions";
+import { changeUnverifiedEmail, resendVerification } from "../verify/actions";
 
 export default async function VerifyEmailPage({ searchParams }: { searchParams: Promise<{ sent?: string; error?: string }> }) {
   const s = await getSession();
@@ -15,6 +15,11 @@ export default async function VerifyEmailPage({ searchParams }: { searchParams: 
       {sent && <p className="ok">A new link is on its way.</p>}
       {error && <p role="alert" className="error">{error}</p>}
       <form action={resendVerification}><button className="btn" type="submit">Resend email</button></form>
+      <details style={{ margin: "16px 0" }}><summary className="muted">Wrong address?</summary>
+        <form action={changeUnverifiedEmail} style={{ display: "grid", gap: 8, marginTop: 8 }}>
+          <input type="email" name="new_email" placeholder="Correct email address" required />
+          <input type="password" name="password" placeholder="Your password" autoComplete="current-password" required />
+          <button className="btn ghost" type="submit">Update and resend</button></form></details>
       <form action={logout} style={{ marginTop: 12 }}><button className="btn ghost" type="submit">Log out</button></form>
     </div>
   );

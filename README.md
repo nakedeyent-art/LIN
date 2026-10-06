@@ -19,6 +19,16 @@ npm run typecheck
 - Real auth: email + password sign-up/login, scrypt hashing, 7-day server-side sessions (only a SHA-256 of the
   cookie token is stored; httpOnly, SameSite=Lax, Secure in production), logout invalidates server-side,
   lockout after 5 failed logins (15 min), uniform login errors and timing for unknown emails
+- Account settings (`/dashboard/settings`): edit name (athletes: sport/position/state/grad year); change password
+  (re-enter current one; ends other devices; wrong attempts feed the same lockout as login); change email (needs the
+  password, link goes to the **new** address and only works for the **same logged-in account**, the old address gets a
+  masked heads-up and a "was changed" notice, other devices are signed out, taken addresses get the same generic reply
+  so it can't probe for accounts); fix a mistyped address while still unverified; sign out other devices; download your
+  data as JSON (POST-only, own data only, no password hashes); **delete account** (password + typing DELETE; blocked
+  while you have open deals, or as a guardian while a linked minor does)
+- Deletion purges and anonymizes instead of hard-deleting: profile, grades, study/meal logs, plans, workouts, team
+  links, invites, sessions and tokens are removed, the original email is freed for reuse, and the user row stays as
+  "Deleted user" so counterparties' deal history and the audit trail remain intact
 - Password reset (`/forgot-password`, `/reset-password`): the request page answers identically whether or not the
   email has an account (lookup + send run after the response, so timing doesn't leak it); links are single-use,
   expire in 1 hour, are stored hashed, and only *display* a form on GET (spent on the POST); per-account cooldown
@@ -72,7 +82,10 @@ npm run typecheck
   agreement); no counter-offers/edits (withdraw and re-offer); active deals can't be cancelled in-app; managers/agents
   can't act for athletes yet; the booster-to-high-school ban and other offer rules in `canOffer` are conservative
   defaults that need per-state legal review; no admin tooling to see/resolve disputed deals.
-- No IP-level rate limiting (login, signup and reset are limited per account only), no MFA, no "change password" or "change email" while signed in. Authorization is enforced in app code (`requireAccess`); consider Postgres
+- No IP-level rate limiting (login, signup, reset and email change are limited per account only), no MFA.
+- Account deletion keeps deal records (anonymized) and `deal_events` indefinitely; there's no retention schedule or
+  admin/support tooling (e.g. fixing a wrong birth date, restoring an account, or a guardian deleting a minor's account).
+  Invites addressed to an old email don't follow an email change. Sessions show start/expiry only (no device/IP). Authorization is enforced in app code (`requireAccess`); consider Postgres
   row-level security driven by `athlete_relationships` consent flags as defense in depth.
 - Manager credentials are self-declared; `credential_verified` stays false until a verification flow exists.
 
@@ -86,7 +99,7 @@ npm run typecheck
 - Dashboard rollups run a few batched queries per page load; fine for hundreds of athletes per viewer, not thousands.
 
 ## Next steps
-1. Account settings (change password/email, delete account); guardian management (add/revoke, turning-18 consent transfer)
+1. Guardian management (add/revoke, turning-18 consent transfer)
 2. Messaging; payments + e-sign for deals; credential verification / admin tooling; file uploads for proof of study and form videos
 3. SIS integrations (Canvas, Google Classroom, PowerSchool), OCR transcript upload
 4. Wearable sync (Apple Health, Health Connect, WHOOP); AI food-photo macros

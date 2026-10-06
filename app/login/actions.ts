@@ -8,10 +8,9 @@ import { createSession, destroySession } from "@/lib/session";
 import { isRole } from "@/lib/roles";
 import { safeNext } from "@/lib/redirect";
 import { validateNewPassword } from "@/lib/password-policy";
+import { clearFailures, recordFailure } from "@/lib/lockout";
 import { sendGuardianInvite, sendVerificationEmail } from "@/lib/verification";
 
-const MAX_FAILS = 5;
-const LOCK_MINUTES = 15;
 // Verified against when the email is unknown, so timing doesn't reveal which emails exist.
 const DUMMY_HASH = "scrypt$16384$8$1$AAAAAAAAAAAAAAAAAAAAAA==$" + Buffer.alloc(64).toString("base64");
 
@@ -24,20 +23,15 @@ export async function login(formData: FormData) {
   const email = normalizeEmail(str(formData, "email"));
   const password = String(formData.get("password") ?? "");
   const { rows } = await db().query(
-    "SELECT id, password_hash, failed_logins, locked_until FROM users WHERE email = $1", [email]);
+    "SELECT id, password_hash, failed_logins, locked_until FROM users WHERE email = $1 AND deleted_at IS NULL", [email]);
   const u = rows[0];
   const locked = u?.locked_until && new Date(u.locked_until) > new Date();
   const ok = await verifyPassword(password, u?.password_hash ?? DUMMY_HASH);
   if (!u || locked || !ok) {
-    if (u && !locked) {
-      await db().query(
-        `UPDATE users SET failed_logins = failed_logins + 1,
-           locked_until = CASE WHEN failed_logins + 1 >= $2 THEN NOW() + make_interval(mins => $3) ELSE locked_until END
-         WHERE id = $1`, [u.id, MAX_FAILS, LOCK_MINUTES]);
-    }
+    if (u && !locked) await recordFailure(u.id);
     failWithNext("/login", locked ? "Too many attempts. Try again in 15 minutes." : "Invalid email or password.", next);
   }
-  await db().query("UPDATE users SET failed_logins = 0, locked_until = NULL WHERE id = $1", [u.id]);
+  await clearFailures(u.id);
   await createSession(u.id);
   redirect(next);
 }

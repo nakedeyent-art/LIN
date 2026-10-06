@@ -29,12 +29,23 @@ export async function destroySession(): Promise<void> {
   jar.delete(COOKIE);
 }
 
+/** SHA-256 of this browser's session cookie (null if none) — used to keep the current session when ending others. */
+export async function currentTokenHash(): Promise<string | null> {
+  const token = (await cookies()).get(COOKIE)?.value;
+  return token ? hashToken(token) : null;
+}
+
+/** Ends every session of the user except the one making this request. */
+export async function endOtherSessions(userId: string): Promise<void> {
+  await db().query("DELETE FROM sessions WHERE user_id=$1 AND token_hash <> COALESCE($2, '')", [userId, await currentTokenHash()]);
+}
+
 export async function getSession(): Promise<Session | null> {
   const token = (await cookies()).get(COOKIE)?.value;
   if (!token) return null;
   const { rows } = await db().query(
     `SELECT u.id, u.full_name, u.email, u.role, u.email_verified_at IS NOT NULL AS verified FROM sessions s JOIN users u ON u.id = s.user_id
-     WHERE s.token_hash = $1 AND s.expires_at > NOW()`,
+     WHERE s.token_hash = $1 AND s.expires_at > NOW() AND u.deleted_at IS NULL`,
     [hashToken(token)],
   );
   const r = rows[0];

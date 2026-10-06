@@ -11,7 +11,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
       <aside className="side">
         <div className="brand">LIN</div>
         <span className="role-chip">{cfg.label}</span>
-        <nav>{cfg.nav.map((n) => <Link key={n.href} href={n.href}>{n.label}</Link>)}</nav>
+        <nav>{cfg.nav.map((n) => <Link key={n.href} href={n.href}>{n.label}</Link>)}<Link href="/dashboard/settings">Settings</Link></nav>
         <form action={logout} style={{ marginTop: 24 }}><button className="btn ghost" type="submit">Log out</button></form>
       </aside>
       <main className="main">{children}</main>
