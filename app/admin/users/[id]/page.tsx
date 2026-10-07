@@ -33,6 +33,7 @@ export default async function AdminUser({ params, searchParams }: { params: Prom
             <tr><td>Role</td><td>{u.role}{u.is_admin ? " (admin)" : ""}</td></tr>
             <tr><td>Created</td><td>{fmt(u.created_at)}</td></tr>
             <tr><td>Sign-in</td><td>{locked ? <Badge tone="red">locked until {fmt(u.locked_until)}</Badge> : `${u.failed_logins} recent failed attempt${u.failed_logins === 1 ? "" : "s"}`} · {u.sessions} active session{u.sessions === 1 ? "" : "s"}</td></tr>
+            <tr><td>Two-factor</td><td>{u.mfa_enrolled ? <Badge tone="green">on</Badge> : <Badge tone="gray">off</Badge>}{u.is_admin ? " (required for admins)" : ""}</td></tr>
             {u.birth_date && <tr><td>Birth date</td><td>{u.birth_date}</td></tr>}
             <tr><td>Deals</td><td>{u.deals_total} total, {u.live_deals} open{u.money_in_flight ? `, ${u.money_in_flight} payment(s) in flight` : ""}</td></tr>
             {u.role === "athlete" && <tr><td>Linked guardians</td><td>{u.guardians}</td></tr>}
@@ -43,6 +44,7 @@ export default async function AdminUser({ params, searchParams }: { params: Prom
 
         {can("unlock") && (locked || u.failed_logins > 0) && <Card title="Clear lockout"><AdminForm action={adminUserAction} hidden={hidden("unlock")} button="Clear lockout" /></Card>}
         {can("resend_verification") && <Card title="Resend verification email"><AdminForm action={adminUserAction} hidden={hidden("resend_verification")} button="Resend" /></Card>}
+        {can("reset_mfa") && <Card title="Remove two-factor"><p className="muted">For someone locked out of their account (lost phone and recovery codes). Verify who they are first, out of band. Signs them out everywhere and emails them.</p><AdminForm action={adminUserAction} hidden={hidden("reset_mfa")} button="Remove two-factor" danger /></Card>}
         {can("suspend") && <Card title="Suspend account"><p className="muted">Signs them out everywhere and blocks sign-in. Their deals and records are untouched.</p><AdminForm action={adminUserAction} hidden={hidden("suspend")} button="Suspend" danger /></Card>}
         {can("unsuspend") && <Card title="Restore account"><AdminForm action={adminUserAction} hidden={hidden("unsuspend")} button="Restore" /></Card>}
         {u.role === "athlete" && !u.deleted_at && !u.is_admin && u.id !== s.userId && (

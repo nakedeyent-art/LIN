@@ -202,26 +202,30 @@ node --env-file-if-exists=.env.local scripts/make-admin.mjs you@example.com --re
   user's details is logged too (once per hour per user).
 - **Boundaries:** admins can't change themselves or other admins, and never see message text, grades, nutrition, training or health data.
 - **Two-factor authentication (required for every admin):** see below.
-- **Not built:** IP allow-listing, hardware security keys / passkeys (WebAuthn), MFA for non-admin accounts, roles below "full admin", approving
+- **Not built:** IP allow-listing, hardware security keys / passkeys (WebAuthn), roles below "full admin", approving
   credentials, refunds/payouts initiated by an admin, content moderation, deleting accounts on someone's behalf, a dispute-resolution workflow.
 
-### Admin two-factor authentication
-Admin pages need **password + an authenticator-app code** (any TOTP app: Google Authenticator, 1Password, Authy, …).
-- **First visit:** a newly granted admin is sent to `/mfa/setup` and can't see anything in `/admin` until they scan the QR code, enter a code
-  (and their password again) and save their **10 one-time recovery codes** (shown once; only hashes are stored). Admins can't turn it off.
-- **Every session:** a new sign-in must pass the second step at `/mfa/verify` (a code, or a recovery code), and again after **8 hours**.
-  Verifying one session doesn't verify another. Admin download routes (reported pictures/attachments) enforce the same rule.
-- **Protections:** codes are RFC 6238 (checked against the RFC's test vectors) with ±1 step of clock drift; a step can't be used twice (replay);
-  5 wrong codes lock the second step for 15 minutes (audited); the TOTP seed is stored **encrypted (AES-256-GCM) with `MFA_ENCRYPTION_KEY`**,
-  bound to its owner, so a copied row is useless; recovery-code use and enrolment are emailed and audited; regenerating codes needs the
-  password plus a live authenticator code.
-- **Server key:** set `MFA_ENCRYPTION_KEY` (`openssl rand -base64 32`) in production — the app refuses to enrol or verify without it. Changing the
-  key makes existing seeds unreadable, so every admin must be reset and re-enrol. Back the key up with your other secrets.
-- **Lost phone *and* recovery codes:** someone with server/database access runs
-  `node --env-file-if-exists=.env.local scripts/reset-admin-mfa.mjs admin@example.com "reason, how you verified them"` (audited, ends their sessions);
-  the admin enrols again. Revoking admin rights (`make-admin.mjs --revoke`) also deletes their two-factor data. Treat both scripts like root access.
-- **Limits:** TOTP can be phished in real time like any one-time code (passkeys/WebAuthn would resist that and aren't built); there is no
-  "remember this device"; the first factor is still a password, so keep admin passwords unique and long.
+### Two-factor authentication (admins: required; everyone else: optional)
+Any account can turn on an authenticator-app second step under **Settings → Two-factor authentication** (`/mfa/setup`); admins can't use the panel without it.
+Works with any TOTP app (Google Authenticator, 1Password, Authy, …). Roles that approve deals and money (sponsor, booster, gym owner, parent/guardian) get a small
+nudge banner; nothing is forced on other roles.
+- **Enrolling:** scan the QR code, enter the first code **and your password**, then save 10 one-time recovery codes (shown once; only hashes stored). Enrolling signs out every
+  other device (so a stolen cookie can't quietly add its own second factor) and emails the owner.
+- **Signing in:** with it on, the password is only step one. The new session is **not signed in at all** until the code is entered: `getSession()` returns null for it, so every page,
+  server action and download route (images, attachments, contracts, data export, live feeds) treats it as a stranger; pages send it to `/mfa/verify`, routes answer 401. A password
+  reset can't bypass it (sessions only come from signing in). Each new device asks once.
+- **Admins** additionally: enrolment is forced on first visit, admin pages need the second step completed within the last **8 hours**, and they can't turn it off. Admin MFA events go to the audit log.
+- **Protections:** RFC 6238 codes (checked against the RFC vectors) with ±1 step drift; a step can't be used twice; 5 wrong codes lock the second step for 15 minutes; the TOTP seed is
+  stored **encrypted (AES-256-GCM) with `MFA_ENCRYPTION_KEY`** and bound to its owner; recovery-code use, enabling, disabling and regenerating are emailed and listed in the person's
+  own **Recent security activity**; turning it off or regenerating codes needs the password plus a live code (a recovery code works for turning it off).
+- **Server key:** set `MFA_ENCRYPTION_KEY` (`openssl rand -base64 32`) in production — the app refuses to enrol or verify without it. Changing the key makes existing seeds unreadable
+  (everyone must be reset and re-enrol). Back it up with your other secrets.
+- **Locked out (lost phone *and* recovery codes):** ordinary accounts — an admin opens the person's page (*Admin → Users*) and uses **Remove two-factor** (needs the admin's password and a written
+  reason; verify the person out-of-band first; it signs them out everywhere, emails them, and is audited and shown in their activity). Admin accounts — someone with server access runs
+  `node --env-file-if-exists=.env.local scripts/reset-admin-mfa.mjs admin@example.com "reason"`. Revoking admin rights (`make-admin.mjs --revoke`) also deletes their two-factor data.
+- **Honest limits:** support reset is a human process, so it's only as strong as the identity check behind it (there's no self-service "email me a reset" on purpose — it would let anyone with
+  the person's inbox undo the second factor); codes can be phished in real time like any one-time code (passkeys/WebAuthn would resist that and aren't built); no "remember this device";
+  an attacker who knows the password can trigger the 15-minute lock on the second step; SMS codes are deliberately not offered.
 
 ## Scheduling the jobs
 Set `CRON_SECRET` (e.g. `openssl rand -hex 32`) and have *any* scheduler call the endpoint once a day:
@@ -242,7 +246,7 @@ catches up). Add new jobs to `JOBS` in `lib/jobs/runner.ts` — each must be ide
 - Deals: see "Payments and e-signature" for what's built and missing; no counter-offers/edits (withdraw and re-offer); managers/agents
   can't act for athletes yet; the booster-to-high-school ban and other offer rules in `canOffer` are conservative
   defaults that need per-state legal review; no admin tooling to see/resolve disputed deals.
-- No IP-level rate limiting (login, signup, reset and email change are limited per account only). MFA exists for admins only (see Admin panel); ordinary accounts have none.
+- No IP-level rate limiting (login, signup, reset and email change are limited per account only). Two-factor is optional for non-admins (see Admin panel → Two-factor authentication).
 - Guardian identity is only as strong as email control — nothing verifies that a "parent" is actually the athlete's
   parent. Any one guardian can remove another (logged and emailed, but there's no dispute/custody process). The "you're
   18" email goes out when the daily job runs (so it needs scheduling, see above); guardian emails are best-effort and not retried. Coaches,

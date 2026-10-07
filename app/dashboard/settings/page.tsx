@@ -4,6 +4,10 @@ import { ROLES } from "@/lib/roles";
 import { MIN_PASSWORD_LENGTH } from "@/lib/password-policy";
 import { DELETE_PHRASE } from "@/lib/account";
 import { Badge, Card, Grid } from "@/components/ui";
+import Link from "next/link";
+import { CodesForm } from "@/components/mfa-ui";
+import { isEnrolled, recoveryRemaining, SECURITY_LABEL, type SecurityAction } from "@/lib/mfa";
+import { disableMyMfa, regenerateMyCodes } from "./mfa-actions";
 import {
   cancelEmailChange, changePassword, deleteAccount, requestEmailChange, signOutOthers, updateEmailPrefs, updateProfile,
 } from "./actions";
@@ -22,6 +26,9 @@ export default async function Settings({ searchParams }: { searchParams: Promise
     pool.query("SELECT token_hash = $2 AS current, created_at, expires_at FROM sessions WHERE user_id=$1 AND expires_at > NOW() ORDER BY created_at DESC", [s.userId, await currentTokenHash()]),
   ]);
   const pref = prefs.rows[0];
+  const mfaOn = await isEnrolled(s.userId);
+  const codesLeft = mfaOn ? await recoveryRemaining(s.userId) : 0;
+  const events = (await pool.query("SELECT action, created_at FROM security_events WHERE user_id=$1 ORDER BY id DESC LIMIT 8", [s.userId])).rows as { action: SecurityAction; created_at: Date }[];
   const a = prof.rows[0], change = pending.rows[0];
   return (
     <>
@@ -73,6 +80,31 @@ export default async function Settings({ searchParams }: { searchParams: Promise
             <button className="btn" type="submit">Save</button>
             <p className="muted">In-app notifications always appear. Security emails (verification, password and email changes, account deletion) are always sent.</p>
           </form>
+        </Card>
+
+        <Card title="Two-factor authentication" wide>
+          {mfaOn ? (
+            <>
+              <p><Badge tone="green">On</Badge> Signing in asks for a code from your authenticator app.{" "}
+                {codesLeft <= 2 ? <Badge tone={codesLeft === 0 ? "red" : "yellow"}>{codesLeft} recovery code{codesLeft === 1 ? "" : "s"} left</Badge> : <span className="muted">{codesLeft} recovery codes left.</span>}</p>
+              <details><summary>New recovery codes</summary>
+                <CodesForm action={regenerateMyCodes} button="Create new codes" continueHref="/dashboard/settings" hint="Enter a current code from your app. Your old recovery codes stop working." /></details>
+              {s.isAdmin ? <p className="muted">Two-factor is required for admin accounts, so it can&apos;t be turned off.</p> : (
+                <details style={{ marginTop: 8 }}><summary>Turn off two-factor</summary>
+                  <form action={disableMyMfa} style={stack}>
+                    <input name="code" placeholder="Code from your app, or a recovery code" autoComplete="one-time-code" required />
+                    <input type="password" name="password" placeholder="Your password" autoComplete="current-password" required />
+                    <button className="btn ghost" type="submit">Turn off</button>
+                  </form></details>)}
+              <p className="muted">Lost your phone and your recovery codes? Contact LIN support: after checking it&apos;s you, they can remove it so you can set it up again.</p>
+            </>
+          ) : (
+            <>
+              <p><Badge tone="gray">Off</Badge> Add a second step so a leaked or guessed password isn&apos;t enough to get into your account{["sponsor", "booster", "gym_owner", "parent"].includes(s.role) ? " — worth doing, since this role approves deals and payments" : ""}.</p>
+              <p><Link className="btn" href="/mfa/setup">Turn on two-factor</Link></p>
+              <p className="muted">Works with any authenticator app (Google Authenticator, 1Password, Authy…). You&apos;ll get one-time recovery codes in case you lose your phone.</p>
+            </>)}
+          {events.length > 0 && <><h4>Recent security activity</h4><ul className="list">{events.map((e, i) => <li key={i}>{SECURITY_LABEL[e.action]} · {fmt(e.created_at)}</li>)}</ul></>}
         </Card>
 
         <Card title="Where you're signed in">

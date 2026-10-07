@@ -10,6 +10,6 @@ try {
   if (!u || u.deleted_at) { console.error("No such account."); process.exit(1); }
   if (!flag && !u.email_verified_at) { console.error("That account's email isn't verified yet."); process.exit(1); }
   await c.query("UPDATE users SET is_admin=$2 WHERE id=$1", [u.id, !flag]);
-  if (flag) { await c.query("DELETE FROM sessions WHERE user_id=$1", [u.id]); await c.query("DELETE FROM admin_recovery_codes WHERE user_id=$1", [u.id]); await c.query("DELETE FROM admin_mfa WHERE user_id=$1", [u.id]); }
+  if (flag) { await c.query("DELETE FROM sessions WHERE user_id=$1", [u.id]); await c.query("DELETE FROM user_recovery_codes WHERE user_id=$1", [u.id]); await c.query("DELETE FROM user_mfa WHERE user_id=$1", [u.id]); }
   console.log(`${email}: admin ${flag ? "revoked (sessions ended, two-factor removed)" : "granted — they will be asked to set up two-factor authentication on first visit to /admin"}`);
 } finally { await c.end(); }

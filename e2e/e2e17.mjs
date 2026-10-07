@@ -38,15 +38,15 @@ const root = await made({ name: "Root Admin", email: "root@x.com", role: "parent
 const second = await made({ name: "Second Admin", email: "second@x.com", role: "parent" });
 const mk = (args) => spawnSync("node", ["scripts/" + args[0], ...args.slice(1)], { cwd: "/home/user/LIN", env: { ...process.env, DATABASE_URL: "postgres://lin:lin@localhost:5432/lin" } });
 const path = (p) => new URL(p.url()).pathname;
-const resetStep = () => sql("update admin_mfa set last_used_step = null");
+const resetStep = () => sql("update user_mfa set last_used_step = null");
 const goto = async (p, u) => { await p.goto(B + u); await settle(p); };
 const newSession = async (email) => { const p = await br.newContext().then((c) => c.newPage()); await login(p, email); return p; };
 const verifyWith = async (p, v) => { await p.fill("input[name=code]", v); await p.click("main button:text-is('Verify'), button:text-is('Verify')"); await settle(p); };
 const logLen = () => readFileSync(LOG, "utf8").length;
 
 // ===== before anyone is admin =====
-rec((await (await br.newContext()).newPage().then((p) => p.goto(B + "/mfa/setup"))).status() === 404, "signed-out visitors get 404 on /mfa/setup");
-rec((await sam.goto(B + "/mfa/setup")).status() === 404 && (await sam.goto(B + "/mfa/verify")).status() === 404, "non-admins get 404 on the MFA pages");
+{ const anon = await br.newContext().then((c) => c.newPage()); await anon.goto(B + "/mfa/setup"); rec(new URL(anon.url()).pathname === "/login", "signed-out visitors are sent to log in from /mfa/setup"); }
+await sam.goto(B + "/mfa/verify"); await settle(sam); rec(path(sam) === "/mfa/setup", "an ordinary user without two-factor is sent from /mfa/verify to setup", path(sam));
 rec(mk(["make-admin.mjs", "root@x.com"]).status === 0 && mk(["make-admin.mjs", "second@x.com"]).status === 0, "two admins granted");
 
 // ===== forced enrolment =====
@@ -61,23 +61,23 @@ await see(root, /Set up two-factor authentication/, "setup page loads");
 rec((await root.locator("img[alt*='QR']").count()) === 1 && (await root.locator("img[alt*='QR']").getAttribute("src")).startsWith("data:image/png;base64,"), "shows a QR code");
 const secret = (await root.locator("[data-testid=mfa-secret]").innerText()).replace(/\s/g, "");
 rec(/^[A-Z2-7]{32}$/.test(secret), "and the key for manual entry", secret);
-rec(!sql("select secret_sealed from admin_mfa").includes(secret) && /^v1:/.test(sql("select secret_sealed from admin_mfa")), "the secret is stored encrypted, never in plaintext");
-rec(sql("select enabled_at is null from admin_mfa") === "t", "enrolment stays pending until a code proves it");
+rec(!sql("select secret_sealed from user_mfa where user_id='" + id("root@x.com") + "'").includes(secret) && /^v1:/.test(sql("select secret_sealed from user_mfa where user_id='" + id("root@x.com") + "'")), "the secret is stored encrypted, never in plaintext");
+rec(sql("select enabled_at is null from user_mfa where user_id='" + id("root@x.com") + "'") === "t", "enrolment stays pending until a code proves it");
 await goto(root, "/mfa/setup");
 rec((await root.locator("[data-testid=mfa-secret]").innerText()).replace(/\s/g, "") === secret, "reloading keeps the same secret (the QR doesn't change under you)");
 const enroll = async (p, c, pw = OLD) => { await p.fill("input[name=code]", c); await p.fill("input[name=password]", pw); await p.click("button:text-is('Turn on two-factor')"); await settle(p); };
 await enroll(root, "000000"); await see(root, /code isn't right/, "a wrong code is refused");
 await enroll(root, code(secret), "wrong-password-x"); await see(root, /password is incorrect/, "a wrong password is refused");
-rec(sql("select enabled_at is null from admin_mfa") === "t", "still pending after failures");
+rec(sql("select enabled_at is null from user_mfa where user_id='" + id("root@x.com") + "'") === "t", "still pending after failures");
 await enroll(root, code(secret));
 await see(root, /Save your recovery codes/, "the right code turns it on and shows recovery codes");
 const codes = (await root.locator("[data-testid=recovery-codes]").innerText()).trim().split("\n");
 rec(codes.length === 10 && codes.every((c) => /^[A-Z2-9]{5}-[A-Z2-9]{5}$/.test(c)), "ten recovery codes", codes.join(","));
 rec((await root.locator("button:text-is('Continue')").isDisabled()), "Continue stays disabled until you confirm you saved them");
-rec(sql("select count(*) from admin_recovery_codes") === "10" && !codes.some((c) => sql("select code_hash from admin_recovery_codes").includes(c.replace("-", ""))), "only hashes of the codes are stored");
+rec(sql("select count(*) from user_recovery_codes") === "10" && !codes.some((c) => sql("select code_hash from user_recovery_codes").includes(c.replace("-", ""))), "only hashes of the codes are stored");
 await root.locator("input[type=checkbox]").check(); await root.locator("a:text-is('Continue')").click(); await settle(root);
 rec(path(root) === "/admin", "after saving them, the admin lands in the panel", path(root));
-rec(sql("select count(*) from admin_audit where action='mfa_enrolled'") === "1" && readFileSync(LOG, "utf8").includes("subject=Two-factor authentication is on for your LIN admin account"), "enrolment is audited and emailed");
+rec(sql("select count(*) from admin_audit where action='mfa_enrolled'") === "1" && readFileSync(LOG, "utf8").includes("subject=Two-factor authentication is on for your LIN account"), "enrolment is audited and emailed");
 await goto(root, "/admin/users"); rec(path(root) === "/admin/users", "this session now works everywhere");
 await goto(root, "/mfa/setup"); rec(path(root) === "/admin", "setup can't be run again once on");
 await goto(root, "/admin/mfa"); rec(!/Turn off|Disable/i.test(await text(root)), "there is no way for an admin to switch it off");
@@ -88,12 +88,12 @@ let s2 = await newSession("root@x.com");
 await goto(s2, "/admin"); rec(path(s2) === "/mfa/verify", "a new session must do the second step", path(s2));
 await goto(s2, "/admin/audit"); rec(path(s2) === "/mfa/verify", "on every admin page");
 // replay: the step used to enrol cannot be used again, even though the code is "valid"
-rec(Number(sql("select last_used_step from admin_mfa")) > 0, "the step used to enrol is remembered");
+rec(Number(sql("select last_used_step from user_mfa")) > 0, "the step used to enrol is remembered");
 // Replay: pretend this very step was just used, then present its (still valid) code.
-const cur = nowStep(); sql(`update admin_mfa set last_used_step = ${cur + 1}`);   // any step up to next is "spent", so a step boundary can't flake this
+const cur = nowStep(); sql(`update user_mfa set last_used_step = ${cur + 1}`);   // any step up to next is "spent", so a step boundary can't flake this
 await goto(s2, "/mfa/verify"); await verifyWith(s2, totpAt(secret, cur));
 await see(s2, /code isn't right/, "a code from the step that was just used is refused (replay protection)");
-sql("update admin_mfa set failed_attempts = 0");
+sql("update user_mfa set failed_attempts = 0");
 await verifyWith(s2, "12ab56"); await see(s2, /code isn't right/, "garbage is refused");
 resetStep();
 await verifyWith(s2, code(secret, -1)); rec(path(s2) === "/admin", "a code one step old is accepted (clock drift)", path(s2));
@@ -108,7 +108,7 @@ await see(s3, /code isn't right/, "wrong codes are refused");
 await goto(s3, "/mfa/verify"); await verifyWith(s3, code(secret));
 await see(s3, /Too many wrong codes/, "after 5 wrong codes even the right code is refused for a while");
 rec(sql("select count(*) from admin_audit where action='mfa_locked'") === "1", "the lock is audited");
-sql("update admin_mfa set locked_until = null, failed_attempts = 0"); resetStep();
+sql("update user_mfa set locked_until = null, failed_attempts = 0"); resetStep();
 await goto(s3, "/mfa/verify"); await verifyWith(s3, code(secret, 1)); rec(path(s3) === "/admin", "after the lock lifts, the right code works", path(s3));
 
 // ===== recovery codes =====
@@ -116,10 +116,10 @@ let s4 = await newSession("root@x.com");
 await goto(s4, "/mfa/verify"); await verifyWith(s4, codes[0].toLowerCase().replace("-", " "));
 rec(path(s4) === "/admin/mfa", "a recovery code signs in (any case, spaces fine) and lands on the security page", path(s4));
 await see(s4, /signed in with a recovery code\. 9 left/, "and says how many remain");
-rec(readFileSync(LOG, "utf8").includes("subject=A recovery code was used on your LIN admin account") && sql("select count(*) from admin_audit where action='mfa_recovery_used'") === "1", "using one is audited and emailed");
+rec(readFileSync(LOG, "utf8").includes("subject=A recovery code was used on your LIN account") && sql("select count(*) from admin_audit where action='mfa_recovery_used'") === "1", "using one is audited and emailed");
 let s5 = await newSession("root@x.com"); await goto(s5, "/mfa/verify"); await verifyWith(s5, codes[0]);
 await see(s5, /code isn't right/, "a recovery code works only once");
-rec(sql("select count(*) from admin_recovery_codes where used_at is not null") === "1", "exactly one is spent");
+rec(sql("select count(*) from user_recovery_codes where used_at is not null") === "1", "exactly one is spent");
 await verifyWith(s5, "AAAAA-BBBBB"); await see(s5, /code isn't right/, "an invented recovery code is refused");
 
 // ===== session freshness =====
@@ -154,11 +154,11 @@ await see(second, /code isn't right/, "another admin's code is no good for me");
 await second.fill("input[name=code]", code(secret2)); await second.fill("input[name=password]", OLD); await second.click("button:text-is('Turn on two-factor')"); await settle(second);
 await see(second, /Save your recovery codes/, "their own works");
 // sealed secrets are bound to their owner
-const sealedRoot = sql(`select secret_sealed from admin_mfa where user_id='${id("root@x.com")}'`);
-sql(`update admin_mfa set secret_sealed='${sealedRoot}' where user_id='${id("second@x.com")}'`);
+const sealedRoot = sql(`select secret_sealed from user_mfa where user_id='${id("root@x.com")}'`);
+sql(`update user_mfa set secret_sealed='${sealedRoot}' where user_id='${id("second@x.com")}'`);
 let s7 = await newSession("second@x.com"); await goto(s7, "/mfa/verify"); await verifyWith(s7, code(secret));
 await see(s7, /can't be read/, "a sealed secret copied onto another account is useless (and fails safely)");
-sql(`update admin_mfa set secret_sealed='v1:AAAA:AAAA:AAAA' where user_id='${id("second@x.com")}'`);
+sql(`update user_mfa set secret_sealed='v1:AAAA:AAAA:AAAA' where user_id='${id("second@x.com")}'`);
 await goto(s7, "/mfa/verify"); await verifyWith(s7, "123456"); await see(s7, /can't be read/, "a corrupted secret fails safely, not with a crash");
 
 // ===== non-admins are unaffected =====
@@ -169,10 +169,10 @@ rec((await sam.goto(B + "/admin")).status() === 404, "and still get 404 on /admi
 rec(mk(["reset-admin-mfa.mjs"]).status === 2 && mk(["reset-admin-mfa.mjs", "root@x.com", "short"]).status === 2, "the reset script demands a real reason");
 rec(mk(["reset-admin-mfa.mjs", "sam@x.com", "Lost phone and recovery codes, verified by video call"]).status === 1, "…and refuses non-admins");
 rec(mk(["reset-admin-mfa.mjs", "root@x.com", "Lost phone and recovery codes, verified by video call"]).status === 0, "reset works for an admin");
-rec(sql(`select count(*) from admin_mfa where user_id='${id("root@x.com")}'`) === "0" && sql(`select count(*) from admin_recovery_codes where user_id='${id("root@x.com")}'`) === "0" && sql(`select count(*) from sessions where user_id='${id("root@x.com")}'`) === "0", "enrolment, codes and sessions are gone");
+rec(sql(`select count(*) from user_mfa where user_id='${id("root@x.com")}'`) === "0" && sql(`select count(*) from user_recovery_codes where user_id='${id("root@x.com")}'`) === "0" && sql(`select count(*) from sessions where user_id='${id("root@x.com")}'`) === "0", "enrolment, codes and sessions are gone");
 rec(sql("select count(*) from admin_audit where action='mfa_reset'") === "1", "the reset is audited");
 let s8 = await newSession("root@x.com"); await goto(s8, "/admin"); rec(path(s8) === "/mfa/setup", "the admin must enrol again", path(s8));
-rec(mk(["make-admin.mjs", "second@x.com", "--revoke"]).status === 0 && sql(`select count(*) from admin_mfa where user_id='${id("second@x.com")}'`) === "0", "revoking admin rights also removes their two-factor data");
+rec(mk(["make-admin.mjs", "second@x.com", "--revoke"]).status === 0 && sql(`select count(*) from user_mfa where user_id='${id("second@x.com")}'`) === "0", "revoking admin rights also removes their two-factor data");
 rec(/Turned on two-factor|Two-factor reset/.test(await (async () => { await goto(s8, "/mfa/setup"); const sec = (await s8.locator("[data-testid=mfa-secret]").innerText()).replace(/\s/g, ""); await s8.fill("input[name=code]", code(sec)); await s8.fill("input[name=password]", OLD); await s8.click("button:text-is('Turn on two-factor')"); await settle(s8); await s8.locator("input[type=checkbox]").check(); await s8.locator("a:text-is('Continue')").click(); await settle(s8); await goto(s8, "/admin/audit"); return text(s8); })()), "audit log shows the two-factor events with readable labels");
 
 console.log(fails ? `\n${fails} FAILED (${total} checks)` : `\nALL PASSED (${total} checks)`);

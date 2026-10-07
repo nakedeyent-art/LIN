@@ -7,6 +7,7 @@ import { canActOnUser, validateReason, type UserAction } from "@/lib/admin";
 import { audit, targetOf, userForAdmin } from "@/lib/admindb";
 import { sendVerificationEmail } from "@/lib/verification";
 import { unlistIfNoGuardian } from "@/lib/guardians";
+import { sendMail } from "@/lib/mailer";
 import { refundPayment, releasePayment } from "@/lib/payments";
 
 const str = (f: FormData, k: string) => String(f.get(k) ?? "").trim();
@@ -35,7 +36,7 @@ export async function adminUserAction(formData: FormData) {
     const u = await userForAdmin(id, client);
     if (!u) { await client.query("ROLLBACK"); return redirect("/admin/users"); }
     const birth = str(formData, "birth_date");
-    if (!["suspend", "unsuspend", "unlock", "set_birth_date", "resend_verification"].includes(action)) { await client.query("ROLLBACK"); return back("error", "Unknown action."); }
+    if (!["suspend", "unsuspend", "unlock", "set_birth_date", "resend_verification", "reset_mfa"].includes(action)) { await client.query("ROLLBACK"); return back("error", "Unknown action."); }
     const ok = canActOnUser(s.userId, targetOf(u), action as UserAction, birth);
     if (!ok.ok) { await client.query("ROLLBACK"); return back("error", ok.error); }
 
@@ -48,6 +49,12 @@ export async function adminUserAction(formData: FormData) {
       await client.query("UPDATE users SET suspended_at=NULL WHERE id=$1", [id]); msg = "Account restored.";
     } else if (action === "unlock") {
       await client.query("UPDATE users SET failed_logins=0, locked_until=NULL WHERE id=$1", [id]); msg = "Lockout cleared.";
+    } else if (action === "reset_mfa") {
+      await client.query("DELETE FROM user_recovery_codes WHERE user_id=$1", [id]);
+      await client.query("DELETE FROM user_mfa WHERE user_id=$1", [id]);
+      await client.query("DELETE FROM sessions WHERE user_id=$1", [id]);
+      await client.query("INSERT INTO security_events(user_id, action) VALUES ($1,'mfa_reset_by_admin')", [id]);
+      msg = "Two-factor removed and the person signed out everywhere. They can set it up again.";
     } else if (action === "set_birth_date") {
       await client.query("UPDATE athlete_profiles SET birth_date=$2 WHERE user_id=$1", [id, birth]);
       // A minor with no guardian can't be listed to sponsors.
@@ -56,6 +63,7 @@ export async function adminUserAction(formData: FormData) {
     }
     await audit(s.userId, action, { userId: id, detail }, client);
     await client.query("COMMIT");
+    if (action === "reset_mfa") await sendMail(u.email, "Two-factor authentication was removed from your LIN account", "LIN support removed two-factor authentication from your account (you asked for help, or support verified a lost device). You can turn it on again under Settings. If you didn't ask for this, change your password now and reply to this email.").catch(() => {});
     if (action === "resend_verification") { await sendVerificationEmail(id, true).catch(() => {}); msg = "Verification email sent."; }
     back("msg", msg);
   } catch (e) {

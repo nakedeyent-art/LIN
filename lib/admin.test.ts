@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { canActOnUser, validateReason, type Target } from "./admin";
 
-const t = (o: Partial<Target> = {}): Target => ({ id: "u1", isAdmin: false, deleted: false, suspended: false, verified: true, role: "athlete", liveDeals: 0, moneyInFlight: 0, ...o });
+const t = (o: Partial<Target> = {}): Target => ({ id: "u1", isAdmin: false, deleted: false, suspended: false, verified: true, role: "athlete", liveDeals: 0, moneyInFlight: 0, mfaEnrolled: true, ...o });
 describe("validateReason", () => {
   it("needs a real reason", () => {
     expect(validateReason("short")).not.toBeNull();
@@ -27,6 +27,13 @@ describe("canActOnUser", () => {
   it("resend verification only when unverified", () => {
     expect(canActOnUser("me", t({ verified: false }), "resend_verification").ok).toBe(true);
     expect(canActOnUser("me", t(), "resend_verification").ok).toBe(false);
+  });
+  it("resetting two-factor: only for ordinary accounts that have it, never self or admins", () => {
+    expect(canActOnUser("me", t(), "reset_mfa").ok).toBe(true);
+    expect(canActOnUser("me", t({ mfaEnrolled: false }), "reset_mfa").ok).toBe(false);
+    expect(canActOnUser("me", t({ id: "me" }), "reset_mfa").ok).toBe(false);
+    expect(canActOnUser("me", t({ isAdmin: true }), "reset_mfa").ok).toBe(false);
+    expect(canActOnUser("me", t({ deleted: true }), "reset_mfa").ok).toBe(false);
   });
   it("birth date: athletes only, valid, and not mid-deal", () => {
     expect(canActOnUser("me", t(), "set_birth_date", "2005-05-05").ok).toBe(true);

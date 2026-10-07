@@ -51,6 +51,9 @@ export async function purgeAndAnonymize(client: PoolClient, id: string, email: s
   await run("DELETE FROM manager_declarations WHERE manager_id=$1");
   await run("UPDATE deal_messages SET body='[message removed]' WHERE sender_id=$1");   // keep the thread intact for the others; the words go
   await run("DELETE FROM notifications WHERE user_id=$1");
+  await run("DELETE FROM user_recovery_codes WHERE user_id=$1");
+  await run("DELETE FROM user_mfa WHERE user_id=$1");
+  await run("DELETE FROM security_events WHERE user_id=$1");
   await run("DELETE FROM news_prefs WHERE user_id=$1");
   // Social: posts and comments are blanked (the rows stay so reports and threads keep their shape); pictures, likes, follows and status go.
   await run("DELETE FROM post_images WHERE post_id IN (SELECT id FROM posts WHERE author_id=$1)");

@@ -3,11 +3,11 @@ import { ageFromBirthDate } from "./crypto";
 
 export const MIN_REASON = 10;
 export const MAX_REASON = 300;
-export type UserAction = "suspend" | "unsuspend" | "unlock" | "set_birth_date" | "resend_verification";
-export type AdminAction = "mfa_enrolled" | "mfa_reset" | "mfa_recovery_used" | "mfa_recovery_regenerated" | "mfa_locked" | "resolve_content_report" | "view_content_report" | "view_content_image" | "news_source_add" | "news_source_fetch" | "news_source_enable" | "news_source_disable" | "news_editorial" | "news_hide" | "news_unhide" | "resolve_report" | "view_report" | "view_attachment" | "suspend" | "unsuspend" | "unlock" | "set_birth_date" | "resend_verification" | "retry_payment";
+export type UserAction = "reset_mfa" | "suspend" | "unsuspend" | "unlock" | "set_birth_date" | "resend_verification";
+export type AdminAction = "reset_mfa" | "mfa_enrolled" | "mfa_reset" | "mfa_recovery_used" | "mfa_recovery_regenerated" | "mfa_locked" | "resolve_content_report" | "view_content_report" | "view_content_image" | "news_source_add" | "news_source_fetch" | "news_source_enable" | "news_source_disable" | "news_editorial" | "news_hide" | "news_unhide" | "resolve_report" | "view_report" | "view_attachment" | "suspend" | "unsuspend" | "unlock" | "set_birth_date" | "resend_verification" | "retry_payment";
 export const ACTION_LABEL: Record<AdminAction, string> = {
   news_source_add: "Added a news source", news_source_fetch: "Fetched a news source", news_source_enable: "Enabled a news source", news_source_disable: "Disabled a news source", news_editorial: "Posted editorial news", news_hide: "Hid a news story", news_unhide: "Restored a news story",
-  mfa_enrolled: "Turned on two-factor", mfa_reset: "Two-factor reset from the server", mfa_recovery_used: "Signed in with a recovery code", mfa_recovery_regenerated: "Generated new recovery codes", mfa_locked: "Two-factor locked after wrong codes",
+  reset_mfa: "Removed someone's two-factor (support)", mfa_enrolled: "Turned on two-factor", mfa_reset: "Two-factor reset from the server", mfa_recovery_used: "Signed in with a recovery code", mfa_recovery_regenerated: "Generated new recovery codes", mfa_locked: "Two-factor locked after wrong codes",
   resolve_content_report: "Resolved a post/comment report", view_content_report: "Viewed a post/comment report", view_content_image: "Viewed a reported picture",
   resolve_report: "Resolved a report", view_report: "Viewed a report", view_attachment: "Downloaded a reported attachment",
   suspend: "Suspend account", unsuspend: "Restore account", unlock: "Clear lockout", set_birth_date: "Correct birth date",
@@ -21,14 +21,14 @@ export const validateReason = (r: string): string | null => {
   return null;
 };
 
-export type Target = { id: string; isAdmin: boolean; deleted: boolean; suspended: boolean; verified: boolean; role: string; liveDeals: number; moneyInFlight: number };
+export type Target = { id: string; isAdmin: boolean; deleted: boolean; suspended: boolean; verified: boolean; role: string; liveDeals: number; moneyInFlight: number; mfaEnrolled: boolean };
 export type Check = { ok: true } | { ok: false; error: string };
 const no = (error: string): Check => ({ ok: false, error });
 
 /** Admins can't act on themselves or on other admins (admin rights are managed with scripts/make-admin.mjs), or on deleted accounts. */
 export function canActOnUser(adminId: string, t: Target, action: UserAction, newBirth?: string): Check {
   if (t.deleted) return no("This account has been deleted.");
-  if (action === "suspend" || action === "unsuspend" || action === "set_birth_date") {
+  if (action === "suspend" || action === "unsuspend" || action === "set_birth_date" || action === "reset_mfa") {
     if (t.id === adminId) return no("You can't do that to your own account.");
     if (t.isAdmin) return no("Admin accounts can't be changed from the panel.");
   }
@@ -36,6 +36,7 @@ export function canActOnUser(adminId: string, t: Target, action: UserAction, new
     case "suspend": return t.suspended ? no("Already suspended.") : { ok: true };
     case "unsuspend": return t.suspended ? { ok: true } : no("This account isn't suspended.");
     case "unlock": return { ok: true };
+    case "reset_mfa": return t.mfaEnrolled ? { ok: true } : no("This person hasn't turned on two-factor.");   // admins are excluded above: theirs is reset from the server
     case "resend_verification": return t.verified ? no("This email is already verified.") : { ok: true };
     case "set_birth_date": {
       if (t.role !== "athlete") return no("Only athletes have a birth date.");

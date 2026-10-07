@@ -55,13 +55,14 @@ export async function userForAdmin(id: string, c: Q = db()) {
             (SELECT count(*)::int FROM deals d WHERE (d.athlete_id=u.id OR d.counterparty_id=u.id) AND d.status IN ${sqlIn(LIVE_STATUSES)}) AS live_deals,
             (SELECT count(*)::int FROM deal_payments p JOIN deals d ON d.id=p.deal_id WHERE p.status IN ${sqlIn(MONEY_IN_FLIGHT)} AND (p.payee_user_id=u.id OR d.athlete_id=u.id OR d.counterparty_id=u.id)) AS money_in_flight,
             (SELECT count(*)::int FROM guardian_links g WHERE g.athlete_id=u.id) AS guardians,
-            (SELECT count(*)::int FROM guardian_links g WHERE g.member_id=u.id) AS wards
+            (SELECT count(*)::int FROM guardian_links g WHERE g.member_id=u.id) AS wards,
+            EXISTS (SELECT 1 FROM user_mfa mm WHERE mm.user_id=u.id AND mm.enabled_at IS NOT NULL) AS mfa_enrolled
        FROM users u LEFT JOIN athlete_profiles ap ON ap.user_id=u.id WHERE u.id=$1`, [id])).rows[0];
   return u ?? null;
 }
 export const targetOf = (u: NonNullable<Awaited<ReturnType<typeof userForAdmin>>>): Target => ({
   id: u.id, isAdmin: u.is_admin, deleted: !!u.deleted_at, suspended: !!u.suspended_at, verified: !!u.email_verified_at,
-  role: u.role, liveDeals: u.live_deals, moneyInFlight: u.money_in_flight,
+  role: u.role, liveDeals: u.live_deals, moneyInFlight: u.money_in_flight, mfaEnrolled: u.mfa_enrolled,
 });
 
 export async function adminDeals(status?: string) {

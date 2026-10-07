@@ -9,6 +9,7 @@ import { isRole } from "@/lib/roles";
 import { safeNext } from "@/lib/redirect";
 import { validateNewPassword } from "@/lib/password-policy";
 import { clearFailures, recordFailure } from "@/lib/lockout";
+import { isEnrolled } from "@/lib/mfa";
 import { sendGuardianInvite, sendVerificationEmail } from "@/lib/verification";
 
 // Verified against when the email is unknown, so timing doesn't reveal which emails exist.
@@ -34,6 +35,8 @@ export async function login(formData: FormData) {
   if (u.suspended_at) failWithNext("/login", "This account is suspended. Contact support.", next);   // only after the right password, so it doesn't reveal who has an account
   await clearFailures(u.id);
   await createSession(u.id);
+  // With two-factor on, the new session isn't usable yet: it must pass the second step first (see getSession in lib/session.ts).
+  if (await isEnrolled(u.id)) redirect(`/mfa/verify?next=${encodeURIComponent(next)}`);
   redirect(next);
 }
 
