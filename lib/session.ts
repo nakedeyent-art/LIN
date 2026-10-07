@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { db } from "./db";
 import { hashToken, newSessionToken } from "./crypto";
 import { ROLES, type Role } from "./roles";
+import { mfaStatus } from "./mfa";
 
 export const COOKIE = "lin_session";
 const SESSION_DAYS = 7;
@@ -67,8 +68,29 @@ export async function requireAccess(href: string): Promise<Session> {
   return s;
 }
 
-/** Admin pages: a verified admin, else the page simply doesn't exist (404) so its presence isn't advertised. */
+/**
+ * Admin pages: a verified admin, else the page simply doesn't exist (404). An admin must also have two-factor authentication set up
+ * (first visit sends them to enrol) and must have completed the second step on THIS session within the last 8 hours.
+ */
 export async function requireAdmin(): Promise<Session> {
+  const s = await getSession();
+  if (!s || !s.emailVerified || !s.isAdmin) notFound();
+  const m = await mfaStatus(s.userId, await currentTokenHash());
+  if (!m.enrolled) redirect("/mfa/setup");
+  if (!m.verifiedFresh) redirect("/mfa/verify");
+  return s;
+}
+
+/** For route handlers (images, downloads): the admin session, or null if not an admin or the second step isn't done. Never redirects. */
+export async function getAdminSession(): Promise<Session | null> {
+  const s = await getSession();
+  if (!s || !s.emailVerified || !s.isAdmin) return null;
+  const m = await mfaStatus(s.userId, await currentTokenHash());
+  return m.enrolled && m.verifiedFresh ? s : null;
+}
+
+/** An admin who may be mid-way through the second step (used only by the /mfa pages). */
+export async function requireAdminBasic(): Promise<Session> {
   const s = await getSession();
   if (!s || !s.emailVerified || !s.isAdmin) notFound();
   return s;

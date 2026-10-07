@@ -201,8 +201,27 @@ node --env-file-if-exists=.env.local scripts/make-admin.mjs you@example.com --re
 - **Audit log:** append-only (DB trigger). Every change needs the admin's password again and a written reason; viewing a
   user's details is logged too (once per hour per user).
 - **Boundaries:** admins can't change themselves or other admins, and never see message text, grades, nutrition, training or health data.
-- **Not built:** MFA for admins (strongly recommended before launch), IP allow-listing, roles below "full admin", approving
+- **Two-factor authentication (required for every admin):** see below.
+- **Not built:** IP allow-listing, hardware security keys / passkeys (WebAuthn), MFA for non-admin accounts, roles below "full admin", approving
   credentials, refunds/payouts initiated by an admin, content moderation, deleting accounts on someone's behalf, a dispute-resolution workflow.
+
+### Admin two-factor authentication
+Admin pages need **password + an authenticator-app code** (any TOTP app: Google Authenticator, 1Password, Authy, …).
+- **First visit:** a newly granted admin is sent to `/mfa/setup` and can't see anything in `/admin` until they scan the QR code, enter a code
+  (and their password again) and save their **10 one-time recovery codes** (shown once; only hashes are stored). Admins can't turn it off.
+- **Every session:** a new sign-in must pass the second step at `/mfa/verify` (a code, or a recovery code), and again after **8 hours**.
+  Verifying one session doesn't verify another. Admin download routes (reported pictures/attachments) enforce the same rule.
+- **Protections:** codes are RFC 6238 (checked against the RFC's test vectors) with ±1 step of clock drift; a step can't be used twice (replay);
+  5 wrong codes lock the second step for 15 minutes (audited); the TOTP seed is stored **encrypted (AES-256-GCM) with `MFA_ENCRYPTION_KEY`**,
+  bound to its owner, so a copied row is useless; recovery-code use and enrolment are emailed and audited; regenerating codes needs the
+  password plus a live authenticator code.
+- **Server key:** set `MFA_ENCRYPTION_KEY` (`openssl rand -base64 32`) in production — the app refuses to enrol or verify without it. Changing the
+  key makes existing seeds unreadable, so every admin must be reset and re-enrol. Back the key up with your other secrets.
+- **Lost phone *and* recovery codes:** someone with server/database access runs
+  `node --env-file-if-exists=.env.local scripts/reset-admin-mfa.mjs admin@example.com "reason, how you verified them"` (audited, ends their sessions);
+  the admin enrols again. Revoking admin rights (`make-admin.mjs --revoke`) also deletes their two-factor data. Treat both scripts like root access.
+- **Limits:** TOTP can be phished in real time like any one-time code (passkeys/WebAuthn would resist that and aren't built); there is no
+  "remember this device"; the first factor is still a password, so keep admin passwords unique and long.
 
 ## Scheduling the jobs
 Set `CRON_SECRET` (e.g. `openssl rand -hex 32`) and have *any* scheduler call the endpoint once a day:
@@ -223,7 +242,7 @@ catches up). Add new jobs to `JOBS` in `lib/jobs/runner.ts` — each must be ide
 - Deals: see "Payments and e-signature" for what's built and missing; no counter-offers/edits (withdraw and re-offer); managers/agents
   can't act for athletes yet; the booster-to-high-school ban and other offer rules in `canOffer` are conservative
   defaults that need per-state legal review; no admin tooling to see/resolve disputed deals.
-- No IP-level rate limiting (login, signup, reset and email change are limited per account only), no MFA.
+- No IP-level rate limiting (login, signup, reset and email change are limited per account only). MFA exists for admins only (see Admin panel); ordinary accounts have none.
 - Guardian identity is only as strong as email control — nothing verifies that a "parent" is actually the athlete's
   parent. Any one guardian can remove another (logged and emailed, but there's no dispute/custody process). The "you're
   18" email goes out when the daily job runs (so it needs scheduling, see above); guardian emails are best-effort and not retried. Coaches,

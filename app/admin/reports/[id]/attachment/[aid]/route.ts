@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { getSession } from "@/lib/session";
+import { getAdminSession } from "@/lib/session";
 import { audit } from "@/lib/admindb";
 
 /** Admins can fetch only the attachments on a message that someone reported (and the download is audited). */
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string; aid: string }> }) {
-  const s = await getSession();
-  if (!s || !s.emailVerified || !s.isAdmin) return new NextResponse(null, { status: 404 });
+  const s = await getAdminSession();
+  if (!s) return new NextResponse(null, { status: 404 });
   const { id, aid } = await ctx.params;
   if (!/^[0-9a-f-]{36}$/i.test(id) || !/^[0-9a-f-]{36}$/i.test(aid)) return new NextResponse(null, { status: 404 });
   const a = (await db().query(

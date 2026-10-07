@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { getSession } from "@/lib/session";
+import { getAdminSession } from "@/lib/session";
 import { audit } from "@/lib/admindb";
 
 /** Admins can view a picture only through a report about its post (and the view is audited). */
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const s = await getSession();
-  if (!s || !s.emailVerified || !s.isAdmin) return new NextResponse(null, { status: 404 });
+  const s = await getAdminSession();
+  if (!s) return new NextResponse(null, { status: 404 });
   const { id } = await ctx.params;
   if (!/^[0-9a-f-]{36}$/i.test(id)) return new NextResponse(null, { status: 404 });
   const img = (await db().query(
