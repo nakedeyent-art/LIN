@@ -10,6 +10,7 @@ import { safeNext } from "@/lib/redirect";
 import { validateNewPassword } from "@/lib/password-policy";
 import { clearFailures, recordFailure } from "@/lib/lockout";
 import { isEnrolled } from "@/lib/mfa";
+import { LIMITS, limitByIp, waitMessage } from "@/lib/ratelimit";
 import { sendGuardianInvite, sendVerificationEmail } from "@/lib/verification";
 
 // Verified against when the email is unknown, so timing doesn't reveal which emails exist.
@@ -23,6 +24,8 @@ export async function login(formData: FormData) {
   const next = safeNext(str(formData, "next"));
   const email = normalizeEmail(str(formData, "email"));
   const password = String(formData.get("password") ?? "");
+  const rl = await limitByIp(LIMITS.login);
+  if (!rl.allowed) failWithNext("/login", waitMessage(rl.retryAfterSeconds), next);
   const { rows } = await db().query(
     "SELECT id, password_hash, failed_logins, locked_until, suspended_at FROM users WHERE email = $1 AND deleted_at IS NULL", [email]);
   const u = rows[0];
@@ -48,6 +51,8 @@ export async function signup(formData: FormData) {
   const name = str(formData, "name").slice(0, 80);
   const role = str(formData, "role");
   const password = String(formData.get("password") ?? "");
+  const rl = await limitByIp(LIMITS.signup);
+  if (!rl.allowed) fail(P, waitMessage(rl.retryAfterSeconds));
   if (!name) fail(P, "Name is required.");
   if (!isValidEmail(email)) fail(P, "Enter a valid email.");
   const pwError = validateNewPassword(password, email);

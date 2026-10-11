@@ -7,6 +7,7 @@ import { completeEnrollment, MFA_LOCK_MINUTES, MFA_MAX_FAILS, securityEvent, ver
 import { audit } from "@/lib/admindb";
 import { sendNotice } from "@/lib/outbox";
 import { safeNext } from "@/lib/redirect";
+import { LIMITS, limitByIp, waitMessage } from "@/lib/ratelimit";
 
 const notice = (to: string, subject: string, text: string) => sendNotice(to, subject, text).catch((e) => console.error("mfa notice failed", (e as Error).message));
 
@@ -32,6 +33,8 @@ export async function verifyMfa(formData: FormData) {
   const next = safeNext(String(formData.get("next") ?? ""), home);
   const sensitive = formData.get("sensitive") === "1";
   const back = (m: string): never => redirect(`/mfa/verify?error=${encodeURIComponent(m)}&next=${encodeURIComponent(next)}${sensitive ? "&sensitive=1" : ""}`);
+  const rl = await limitByIp(LIMITS.mfa);
+  if (!rl.allowed) back(waitMessage(rl.retryAfterSeconds));
   const tok = await currentTokenHash();
   if (!tok) redirect("/login");
   const r = await verifySecondStep(s.userId, String(formData.get("code") ?? ""), tok!);

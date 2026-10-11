@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { after } from "next/server";
 import { hashPassword, isValidEmail, normalizeEmail } from "@/lib/crypto";
 import { sendNotice } from "@/lib/outbox";
+import { LIMITS, limitByIp, waitMessage } from "@/lib/ratelimit";
 import { validateNewPassword } from "@/lib/password-policy";
 import { completePasswordReset, peekResetToken, sendPasswordReset } from "@/lib/verification";
 
@@ -13,6 +14,8 @@ import { completePasswordReset, peekResetToken, sendPasswordReset } from "@/lib/
 export async function requestPasswordReset(formData: FormData) {
   const email = normalizeEmail(String(formData.get("email") ?? ""));
   if (!isValidEmail(email)) redirect(`/forgot-password?error=${encodeURIComponent("Enter a valid email address.")}`);
+  const rl = await limitByIp(LIMITS.resetRequest);
+  if (!rl.allowed) redirect(`/forgot-password?error=${encodeURIComponent(waitMessage(rl.retryAfterSeconds))}`);
   after(async () => {
     try { await sendPasswordReset(email); } catch (e) { console.error("password reset email failed", e); }
   });

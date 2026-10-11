@@ -7,6 +7,7 @@ import { paymentsEnabled } from "../stripe";
 import { purgeOldNotifications } from "../notificationsdb";
 import { ingestAll } from "../newsdb";
 import { drainOutbox, purgeOutbox } from "../outbox";
+import { purgeRateLimits } from "../ratelimit";
 
 const LOCK_KEY = 7_345_001;   // arbitrary app-wide advisory-lock id: only one run of the daily jobs at a time
 
@@ -44,7 +45,8 @@ const JOBS: { name: string; run: (o: { dry: boolean }) => Promise<JobResult> }[]
       const sessions = (await db().query("DELETE FROM sessions WHERE expires_at < NOW() - INTERVAL '1 day'")).rowCount ?? 0;
       const logs = (await db().query("DELETE FROM job_runs WHERE started_at < NOW() - INTERVAL '180 days'")).rowCount ?? 0;
       const outbox = await purgeOutbox();
-      return { processed: notes + sessions + logs + outbox, skipped: 0, failed: 0 };
+      const limits = await purgeRateLimits();
+      return { processed: notes + sessions + logs + outbox + limits, skipped: 0, failed: 0 };
     } },
 ];
 
