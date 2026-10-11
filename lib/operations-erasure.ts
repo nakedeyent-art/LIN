@@ -1,4 +1,5 @@
 import type { PoolClient } from 'pg';
+import { departAllOrganizations } from './organizations';
 /** Caller has already anonymized users. Retain agreements with signature evidence; erase other private records. */
 export async function eraseOperations(c:PoolClient,id:string) {
  await c.query("UPDATE signing_envelopes SET status='voided' WHERE athlete_id=$1 AND status IN ('draft','sent','viewed','partially_signed')",[id]);
@@ -17,7 +18,7 @@ export async function eraseOperations(c:PoolClient,id:string) {
  await c.query('DELETE FROM scouting_watch_state WHERE athlete_id=$1 OR recruiter_id=$1',[id]);
  await c.query('DELETE FROM scouting_templates WHERE owner_id=$1',[id]);
  await c.query('DELETE FROM scouting_stages WHERE owner_id=$1',[id]);
- await c.query('DELETE FROM organization_members WHERE user_id=$1',[id]);
+ await departAllOrganizations(c,id);
  await c.query("UPDATE sports_venues SET name='Removed venue',address='',contact_name=NULL,contact_details=NULL,latitude=NULL,longitude=NULL WHERE created_by=$1",[id]);
  await c.query("UPDATE sports_event_details SET notes='' WHERE event_id IN (SELECT id FROM events WHERE organizer_id=$1)",[id]);
  await c.query("UPDATE events SET name='Removed event',sport=NULL,location=NULL,status='cancelled' WHERE organizer_id=$1",[id]);
