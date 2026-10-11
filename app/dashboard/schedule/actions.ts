@@ -34,9 +34,26 @@ export async function updateAttendance(form:FormData) {
  const s=await requireUser(),athlete=String(form.get('athlete_id')??''),event=String(form.get('event_id')??''),availability=String(form.get('availability')??''),attendance=String(form.get('attendance')??'');
  if(!validId(athlete)||!validId(event)||!await familyAuthority(s.userId,athlete)||!await accessibleEvent(s,event))redirect('/dashboard/schedule');
  if(!['unknown','available','unavailable','tentative'].includes(availability)||!['expected','attended','absent'].includes(attendance))redirect('/dashboard/schedule');
- const consent=form.get('guardian_consent')==='on'&&!!(await db().query('SELECT 1 FROM guardian_links WHERE athlete_id=$1 AND member_id=$2',[athlete,s.userId])).rowCount;
- await db().query('UPDATE sports_attendees SET availability=$3,attendance=$4,guardian_consent_by=CASE WHEN $5 THEN $6::uuid ELSE guardian_consent_by END,guardian_consent_at=CASE WHEN $5 THEN now() ELSE guardian_consent_at END WHERE event_id=$1 AND athlete_id=$2',[event,athlete,availability,attendance,consent,s.userId]);
+ await db().query('UPDATE sports_attendees SET availability=$3,attendance=$4 WHERE event_id=$1 AND athlete_id=$2',[event,athlete,availability,attendance]);
+ const consent=String(form.get('consent')??'');
+ if(consent==='give'||consent==='revoke'){
+  const {setGuardianConsent}=await import('@/lib/sports-events');
+  const r=await setGuardianConsent(s.userId,athlete,event,consent==='give');
+  if(!r.ok)redirect(`/dashboard/schedule?athlete=${athlete}&error=${encodeURIComponent(r.error)}`);
+ }
  redirect(`/dashboard/schedule?athlete=${athlete}`);
+}
+export async function updateSportsEvent(form:FormData) {
+ const s=await requireUser(),athlete=String(form.get('athlete_id')??''),event=String(form.get('event_id')??''),g=(k:string)=>String(form.get(k)??'');
+ const {updateEvent}=await import('@/lib/sports-events');
+ const r=await updateEvent(s,event,{name:g('name'),kind:g('kind'),startsAt:g('starts_at'),endsAt:g('ends_at'),venue:g('venue'),address:g('address'),latitude:g('latitude'),longitude:g('longitude'),notes:g('notes'),recruitingVisible:form.get('recruiting_visible')==='on'});
+ redirect(`/dashboard/schedule?athlete=${encodeURIComponent(athlete)}&${r.ok?'msg':'error'}=${encodeURIComponent(r.ok?r.message??'Saved.':r.error)}`);
+}
+export async function cancelSportsEvent(form:FormData) {
+ const s=await requireUser(),athlete=String(form.get('athlete_id')??''),event=String(form.get('event_id')??'');
+ const {cancelEvent}=await import('@/lib/sports-events');
+ const r=await cancelEvent(s,event);
+ redirect(`/dashboard/schedule?athlete=${encodeURIComponent(athlete)}&${r.ok?'msg':'error'}=${encodeURIComponent(r.ok?r.message??'Cancelled.':r.error)}`);
 }
 
 export async function createSeason(form:FormData) {
