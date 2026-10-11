@@ -34,3 +34,15 @@ describe("screenText", () => {
     if (!r.ok) expect(r.error).not.toMatch(/nudes/i);
   });
 });
+
+describe("deal terms", () => {
+  it("may name platforms for a minor's deal, but never contact details, links or handles", () => {
+    const deal = { minorThread: true, paymentsOn: false, platformsOk: true };
+    expect(screenText("Two Instagram posts and one in-store appearance in November.", deal).ok).toBe(true);
+    expect(screenText("Three TikTok videos and a Snapchat takeover", deal).ok).toBe(true);
+    expect(screenText("Post and tag @brand_official", deal).ok).toBe(false);
+    expect(screenText("Email the plan to kid@example.com", deal).ok).toBe(false);
+    expect(screenText("Details at www.brand.com", deal).ok).toBe(false);
+    expect(screenText("Two Instagram posts", { ...deal, platformsOk: false }).ok).toBe(false);   // messages keep the stricter rule
+  });
+});

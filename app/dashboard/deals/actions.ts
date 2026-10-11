@@ -42,7 +42,7 @@ export async function createOffer(formData: FormData) {
   const ok = canOffer(s.role, a.level as Level);
   if (!ok.ok) back(ok.error);
   // Offers are visible to the athlete too; the message safety boundary also applies to their terms.
-  const screened = screenText(`${title}\n${deliverables}`, { minorThread: a.minor, paymentsOn: paymentsEnabled() });
+  const screened = screenText(`${title}\n${deliverables}`, { minorThread: a.minor, paymentsOn: paymentsEnabled(), platformsOk: true });   // deliverables name platforms; contact details stay blocked
   if (!screened.ok) back(screened.error.replace("message", "offer").replace("conversation", "offer"));
 
   const client = await db().connect();

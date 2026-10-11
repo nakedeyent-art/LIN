@@ -213,8 +213,8 @@ rec((await status(cody, "/dashboard/nutrition")) === 404, "coach has no nutritio
 // ---------- 6. dashboards on real data ----------
 await jordan.goto(B + "/dashboard"); await settle(jordan);
 await see(jordan, /Tomorrow session/, "athlete home: next workout is real");
-await see(jordan, /Verified study minutes \(7d\) 105/, "athlete home: verified minutes");
-await see(jordan, /Nutrition on target \(14d\) 60%/, "athlete home: nutrition compliance");
+await see(jordan, /105 Verified study minutes \(7d\)/, "athlete home: verified minutes");
+await see(jordan, /60% Nutrition on target \(14d\)/, "athlete home: nutrition compliance");
 await see(jordan, /✅ Add body details/, "athlete checklist reflects real progress");
 await maria.goto(B + "/dashboard"); await settle(maria); await see(maria, /Jordan Reyes.*Cleared/, "parent home: athlete row with gate");
 await see(maria, /2\+ missed/, "parent home flags missed sessions");
@@ -250,7 +250,7 @@ await submit(tm, { name: "Fall Hoops Classic", sport: "Basketball", location: "D
 await tm.goto(B + "/dashboard/events"); await settle(tm);
 await tm.locator("main select[name=status]").selectOption("published"); await tm.locator("main button:has-text('Update')").click(); await settle(tm);
 await tm.goto(B + "/dashboard"); await see(tm, /Fall Hoops Classic.*published/, "tournament home lists the published event");
-await sam.goto(B + "/dashboard"); await see(sam, /Open offers 0/, "sponsor pipeline computed from real deals");
+await sam.goto(B + "/dashboard"); await see(sam, /0 Open offers/, "sponsor pipeline computed from real deals");
 await gia.goto(B + "/dashboard"); await see(gia, /Your offers/, "gym owner dashboard is the real pipeline");
 rec((await status(ada, "/dashboard/team")) === 200, "adult athlete can open Team");
 await ada.goto(B + "/dashboard/team"); await see(ada, /Send invite/, "adult athlete manages their own team");

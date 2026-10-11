@@ -18,3 +18,14 @@ export async function mfaEnroll(page, B, pw = "longenoughpw1") {
   await page.click("a:text-is('Continue')"); await page.waitForLoadState("networkidle");
   return secret;
 }
+
+/** Enrols any signed-in page in two-factor by visiting /mfa/setup directly (for non-admin accounts) and leaves that session freshly verified. */
+export async function mfaEnrollAt(page, B, pw = "longenoughpw1") {
+  await page.goto(B + "/mfa/setup"); await page.waitForLoadState("networkidle");
+  const secret = (await page.locator("[data-testid=mfa-secret]").innerText()).replace(/\s/g, "");
+  await page.fill("input[name=code]", code(secret)); await page.fill("input[name=password]", pw);
+  await Promise.all([page.waitForResponse(r => r.request().method() === "POST" && new URL(r.url()).pathname === "/mfa/setup"), page.click("button:text-is('Turn on two-factor')")]);
+  await page.waitForSelector("input[type=checkbox]"); await page.check("input[type=checkbox]");
+  await page.click("a:text-is('Continue')"); await page.waitForLoadState("networkidle");
+  return secret;
+}

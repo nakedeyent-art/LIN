@@ -17,7 +17,7 @@ export async function saveDealWork(form:FormData) {
    if(!title||title.length>200||!/^\d{4}-\d{2}-\d{2}$/.test(due)||!Number.isFinite(Date.parse(due)))throw new Error('Enter a title and valid deadline.');
    // These are operational notes, so use the same anti-abuse filter as messages.
    const minor=(await c.query("SELECT birth_date>CURRENT_DATE-INTERVAL '18 years' AS minor FROM athlete_profiles WHERE user_id=$1",[d.athlete_id])).rows[0]?.minor;
-   const screened=screenText(title,{minorThread:!!minor,paymentsOn:paymentsEnabled()});if(!screened.ok)throw new Error(screened.error);
+   const screened=screenText(title,{minorThread:!!minor,paymentsOn:paymentsEnabled(),platformsOk:true});if(!screened.ok)throw new Error(screened.error);
    await c.query('INSERT INTO deal_work_items(deal_id,created_by,title,due_on) VALUES($1,$2,$3,$4)',[dealId,s.userId,title,due]);
   }else{
    const item=(await c.query('SELECT * FROM deal_work_items WHERE id=$1 AND deal_id=$2 FOR UPDATE',[id,dealId])).rows[0];if(!item)throw new Error('Deliverable not found.');

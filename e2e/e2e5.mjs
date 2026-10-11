@@ -57,10 +57,10 @@ await see(lp, /Choose a new password.*ann@x\.com/, "link shows the reset form fo
 
 // ---- validation doesn't burn the token ----
 const fill = async (p, pw, confirm) => { await p.fill("[name=password]", pw); await p.fill("[name=confirm]", confirm ?? pw); await p.click("button[type=submit]"); await settle(p); };
-await fill(lp, "short", "short"); await see(lp, /at least 10 characters/, "short password rejected");
+await fill(lp, "short", "short"); rec((await lp.locator("[name=password]").evaluate((e) => !e.checkValidity())) || /at least 10 characters/.test(await text(lp)), "short password rejected (browser or server)");
 await fill(lp, NEW, NEW + "x"); await see(lp, /don't match/, "mismatched confirmation rejected");
 await fill(lp, "Password1234!", "Password1234!"); await see(lp, /too common/, "common password rejected");
-await fill(lp, "ann@x.com", "ann@x.com"); await see(lp, /can't be your email|too short|at least 10/i, "email-as-password rejected");
+await fill(lp, "ann@x.com", "ann@x.com"); rec((await lp.locator("[name=password]").evaluate((e) => !e.checkValidity())) || /can't be your email|too short|at least 10/i.test(await text(lp)), "email-as-password rejected (browser or server)");
 rec(sql("select count(*) from email_tokens where used_at is not null") === "0", "validation errors didn't use up the token");
 
 // ---- lock + live session + unverified, then reset ----
@@ -70,7 +70,7 @@ await login(victim, "ann@x.com", OLD); await see(victim, /Too many attempts/, "a
 sql("update users set email_verified_at = NULL where email='ann@x.com'");
 await fill(lp, NEW);
 await see(lp, /Password changed/, "reset succeeds → login page with confirmation");
-rec(sql("select failed_logins||':'||(locked_until is null) from users where email='ann@x.com'") === "0:t", "lockout cleared by reset");
+rec(sql("select failed_logins||':'||(locked_until is null) from users where email='ann@x.com'") === "0:t", "lockout cleared by reset", sql("select failed_logins||':'||locked_until from users where email='ann@x.com'"));
 rec(sql("select email_verified_at is not null from users where email='ann@x.com'") === "t", "reset proves mailbox control → email verified");
 rec(sql("select count(*) from sessions s join users u on u.id=s.user_id where u.email='ann@x.com'") === "0", "all of ann's sessions were ended");
 await live.goto(B + "/dashboard"); await settle(live);

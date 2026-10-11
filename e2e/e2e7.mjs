@@ -4,6 +4,7 @@ import { chromium } from "playwright";
 import { readFileSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { mfaEnrollAt } from "./mfa-helper.mjs";
 const B = _rt.B;
 const br = await chromium.launch(_rt.browserOptions);
 let fails = 0, total = 0;
@@ -219,7 +220,8 @@ await open(maria, `/dashboard/nutrition?athlete=${jid}`); await see(maria, /View
 rec((await maria.locator("main button:has-text('Save details')").count()) === 0 && (await maria.locator("main button:has-text('Create targets')").count()) === 0, "parent of an adult can't edit nutrition");
 await open(maria, `/dashboard/training?athlete=${jid}`); rec((await maria.locator("main button:has-text('Switch to')").count()) === 0, "parent of an adult can't change season mode");
 await open(maria, `/dashboard/deals`); await notSee(maria, /Pending at 18/, "sharing academics/health never exposes deals");
-// athlete confirms the deal; former guardian can't
+// athlete confirms the deal; former guardian can't. Approving a deal is a money decision: it needs two-factor with a recent code.
+await mfaEnrollAt(jordan, B, OLD);
 await open(jordan, `/dashboard/deals/${dealId}`); await jordan.locator("main button:has-text('Confirm deal')").click(); await settle(jordan);
 rec(sql("select status from deals where title='Pending at 18'") === "awaiting_signature", "adult athlete confirmed the deal that was awaiting a guardian (it now goes to signing)");
 // stop sharing, then remove
