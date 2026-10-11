@@ -2,7 +2,7 @@
 import { redirect } from "next/navigation";
 import { after } from "next/server";
 import { hashPassword, isValidEmail, normalizeEmail } from "@/lib/crypto";
-import { sendMail } from "@/lib/mailer";
+import { sendNotice } from "@/lib/outbox";
 import { validateNewPassword } from "@/lib/password-policy";
 import { completePasswordReset, peekResetToken, sendPasswordReset } from "@/lib/verification";
 
@@ -35,7 +35,7 @@ export async function resetPassword(formData: FormData) {
   const done = await completePasswordReset(token, await hashPassword(password));
   if (!done) redirect(`/reset-password?token=${encodeURIComponent(token)}`);
   try {
-    await sendMail(done!.email, "Your LIN password was changed",
+    await sendNotice(done!.email, "Your LIN password was changed",
       `Hi ${done!.name},\n\nYour password was just changed and you've been signed out everywhere. If this was you, no action is needed.\n` +
       `If it wasn't, reset your password again right away from the login page.`);
   } catch (e) { console.error("password-changed notice failed", e); }

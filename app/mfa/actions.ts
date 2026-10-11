@@ -5,10 +5,10 @@ import { checkPassword } from "@/lib/reauth";
 import type { CodesState } from "@/lib/mfa";
 import { completeEnrollment, MFA_LOCK_MINUTES, MFA_MAX_FAILS, securityEvent, verifySecondStep } from "@/lib/mfa";
 import { audit } from "@/lib/admindb";
-import { sendMail } from "@/lib/mailer";
+import { sendNotice } from "@/lib/outbox";
 import { safeNext } from "@/lib/redirect";
 
-const notice = (to: string, subject: string, text: string) => sendMail(to, subject, text).catch((e) => console.error("mfa notice failed", (e as Error).message));
+const notice = (to: string, subject: string, text: string) => sendNotice(to, subject, text).catch((e) => console.error("mfa notice failed", (e as Error).message));
 
 /** Enrolment (mandatory for admins, optional for everyone else): password + the first code from the authenticator app. Returns the recovery codes once. */
 export async function enrollMfa(_prev: CodesState, formData: FormData): Promise<CodesState> {

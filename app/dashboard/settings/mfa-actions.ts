@@ -4,9 +4,9 @@ import { currentTokenHash, requireUser } from "@/lib/session";
 import { checkPassword } from "@/lib/reauth";
 import type { CodesState } from "@/lib/mfa";
 import { disableMfa, regenerateRecovery } from "@/lib/mfa";
-import { sendMail } from "@/lib/mailer";
+import { sendNotice } from "@/lib/outbox";
 
-const notice = (to: string, subject: string, text: string) => sendMail(to, subject, text).catch((e) => console.error("mfa notice failed", (e as Error).message));
+const notice = (to: string, subject: string, text: string) => sendNotice(to, subject, text).catch((e) => console.error("mfa notice failed", (e as Error).message));
 const done = (k: "msg" | "error", m: string): never => redirect(`/dashboard/settings?${k}=${encodeURIComponent(m)}`);
 
 /** New recovery codes: password + a live authenticator code. The old codes stop working. */

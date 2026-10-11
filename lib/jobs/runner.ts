@@ -6,6 +6,7 @@ import { retryStuckPayments } from "../payments";
 import { paymentsEnabled } from "../stripe";
 import { purgeOldNotifications } from "../notificationsdb";
 import { ingestAll } from "../newsdb";
+import { drainOutbox, purgeOutbox } from "../outbox";
 
 const LOCK_KEY = 7_345_001;   // arbitrary app-wide advisory-lock id: only one run of the daily jobs at a time
 
@@ -15,6 +16,12 @@ export type RunSummary =
 
 /** Add new scheduled jobs here; each must be idempotent and safe to retry. */
 const JOBS: { name: string; run: (o: { dry: boolean }) => Promise<JobResult> }[] = [
+  // Retries queued notices with backoff (see lib/outbox.ts). Runs first so a provider outage clears as soon as the scheduler fires.
+  { name: "email-outbox", run: async ({ dry }) => {
+      if (dry) return { processed: 0, skipped: 0, failed: 0 };
+      const r = await drainOutbox(500);
+      return { processed: r.sent, skipped: r.retrying, failed: r.dead };   // a message that exhausted its retries is a real failure
+    } },
   { name: "adult-transition", run: runAdultTransition },
   { name: "operations-reminders", run: runOperationsReminders },
   { name: "scouting-watch", run: runScoutingWatch },
@@ -36,7 +43,8 @@ const JOBS: { name: string; run: (o: { dry: boolean }) => Promise<JobResult> }[]
       const notes = await purgeOldNotifications();
       const sessions = (await db().query("DELETE FROM sessions WHERE expires_at < NOW() - INTERVAL '1 day'")).rowCount ?? 0;
       const logs = (await db().query("DELETE FROM job_runs WHERE started_at < NOW() - INTERVAL '180 days'")).rowCount ?? 0;
-      return { processed: notes + sessions + logs, skipped: 0, failed: 0 };
+      const outbox = await purgeOutbox();
+      return { processed: notes + sessions + logs + outbox, skipped: 0, failed: 0 };
     } },
 ];
 

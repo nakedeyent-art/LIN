@@ -2,7 +2,8 @@
 import type { PoolClient } from "pg";
 import { db } from "./db";
 import { notifyInApp } from "./notificationsdb";
-import { appUrl, sendMail } from "./mailer";
+import { appUrl } from "./mailer";
+import { sendNotice } from "./outbox";
 import { paymentsEnabled, stripe, StripeError } from "./stripe";
 import { fundingBlocker, payeeValid, type PaymentStatus } from "./payment-rules";
 import { platformFee } from "./money";
@@ -38,7 +39,7 @@ export const notifyDealParties = async (dealId: string, subject: string, text: s
     const ids = [...new Set<string>(r.ids)];
     await notifyInApp(ids, { kind: "payment", title: `${subject}: "${r.title}"`, href: `/dashboard/deals/${dealId}` });
     const emails = (await db().query("SELECT email FROM users WHERE id = ANY($1::uuid[]) AND deleted_at IS NULL AND email_deal_updates", [ids])).rows;
-    for (const e of emails) await sendMail(e.email, subject, `${text}\n\n${appUrl()}/dashboard/deals/${dealId}`);
+    for (const e of emails) await sendNotice(e.email, subject, `${text}\n\n${appUrl()}/dashboard/deals/${dealId}`);
   } catch (e) { console.error("payment notice failed", (e as Error).message); }
 };
 

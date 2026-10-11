@@ -1,6 +1,7 @@
 import type { PoolClient } from "pg";
 import { db } from "./db";
-import { appUrl, sendMail } from "./mailer";
+import { appUrl } from "./mailer";
+import { sendNotice } from "./outbox";
 import {
   type Capacity, type DealContext, type DealStatus, STATUS_LABEL,
 } from "./deals";
@@ -99,6 +100,6 @@ export async function notifyDeal(dealId: string, actorId: string, newStatus: Dea
       "SELECT email FROM users WHERE id = ANY($1::uuid[]) AND deleted_at IS NULL AND email_deal_updates", [ids])).rows.map((r) => r.email as string);
     const subject = created ? "You have a new NIL offer" : `NIL deal update: ${STATUS_LABEL[newStatus]}`;
     const text = `${created ? "A new offer is waiting for you" : `A deal ("${d.title}") is now: ${STATUS_LABEL[newStatus]}`}.\n\nLog in to review: ${appUrl()}/dashboard/deals/${dealId}\n\nYou can change which emails you get under Settings.`;
-    await Promise.all(people.map((e) => sendMail(e, subject, text)));
+    await Promise.all(people.map((e) => sendNotice(e, subject, text)));
   } catch (e) { console.error("deal notification failed", e); }
 }

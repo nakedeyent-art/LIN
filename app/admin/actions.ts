@@ -7,7 +7,7 @@ import { canActOnUser, validateReason, type UserAction } from "@/lib/admin";
 import { audit, targetOf, userForAdmin } from "@/lib/admindb";
 import { sendVerificationEmail } from "@/lib/verification";
 import { unlistIfNoGuardian } from "@/lib/guardians";
-import { sendMail } from "@/lib/mailer";
+import { sendNotice } from "@/lib/outbox";
 import { refundPayment, releasePayment } from "@/lib/payments";
 
 const str = (f: FormData, k: string) => String(f.get(k) ?? "").trim();
@@ -65,7 +65,7 @@ export async function adminUserAction(formData: FormData) {
     }
     await audit(s.userId, action, { userId: id, detail }, client);
     await client.query("COMMIT");
-    if (action === "reset_mfa") await sendMail(u.email, "Two-factor authentication was removed from your LIN account", "LIN support reset your two-factor authentication after an account-recovery request. All devices were signed out. Sign in and set up two-factor again before using your account. If you didn't request this, contact support immediately.").catch(() => {});
+    if (action === "reset_mfa") await sendNotice(u.email, "Two-factor authentication was removed from your LIN account", "LIN support reset your two-factor authentication after an account-recovery request. All devices were signed out. Sign in and set up two-factor again before using your account. If you didn't request this, contact support immediately.").catch(() => {});
     if (action === "resend_verification") { await sendVerificationEmail(id, true).catch(() => {}); msg = "Verification email sent."; }
     back("msg", msg);
   } catch (e) {

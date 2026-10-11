@@ -7,6 +7,8 @@ import { validId } from "./operations";
 import { completedPdf, textPdf, pdfHash } from "./signing-pdf";
 import { PDFDocument } from "pdf-lib";
 import { nameMatches } from "./contract";
+import { appUrl } from "./mailer";
+import { drainOutbox, enqueueMail } from "./outbox";
 export const SIGNING_CONSENT="forg3-nil-v1";
 export const FIELD_KINDS=["signature","initials","date","checkbox","text"] as const;
 export type Envelope={id:string;athlete_id:string;document_id:string;version_id:string;deal_id:string|null;event_id:string|null;created_by:string;title:string;status:string;expires_at:Date};
@@ -170,13 +172,20 @@ export async function closeEnvelope(s:Session,id:string,action:'declined'|'voide
  }catch(e){await c.query('ROLLBACK');throw e;}finally{c.release();}
  await deliverSigningNotices(id,action);
 }
-/** Transactional in-app delivery: event and notification succeed together and retries deduplicate by day. */
+/**
+ * Transactional delivery: the event, the in-app notification and the (generic) email all commit together, and retries deduplicate by day.
+ * The email carries no document names, amounts or people — just a link behind login — and goes through the retrying outbox.
+ */
 export async function deliverSigningNotices(id:string,kind:string) {
  const c=await db().connect();
  try {await c.query('BEGIN');
-  const recipients=(await c.query('SELECT id,user_id FROM signing_recipients WHERE envelope_id=$1',[id])).rows;
+  const recipients=(await c.query('SELECT r.id,r.user_id,u.email FROM signing_recipients r JOIN users u ON u.id=r.user_id WHERE r.envelope_id=$1 AND u.deleted_at IS NULL',[id])).rows;
+  const label=kind==='reminder'?'needs your attention':kind;
   for(const r of recipients){const event=await c.query('INSERT INTO signing_delivery_events(envelope_id,recipient_id,kind) VALUES($1,$2,$3) ON CONFLICT DO NOTHING RETURNING id',[id,r.id,kind]);
-   if(event.rowCount)await c.query("INSERT INTO notifications(user_id,kind,title,href) VALUES($1,'account',$2,$3)",[r.user_id,`Agreement ${kind === 'reminder'?'needs your attention':kind}`,`/dashboard/signing/${id}`]);
+   if(!event.rowCount)continue;
+   await c.query("INSERT INTO notifications(user_id,kind,title,href) VALUES($1,'account',$2,$3)",[r.user_id,`Agreement ${label}`,`/dashboard/signing/${id}`]);
+   await enqueueMail(r.email,`An agreement ${label} on LIN`,`An agreement on LIN ${label==='needs your attention'?'still needs your attention':'has an update ('+label+')'}.\n\nLog in to review it: ${appUrl()}/dashboard/signing/${id}`,{dedupeKey:`signing:${event.rows[0].id}`,client:c});
   }await c.query('COMMIT');
  }catch(e){await c.query('ROLLBACK');throw e;}finally{c.release();}
+ await drainOutbox(20).catch(()=>{});
 }

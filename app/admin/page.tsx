@@ -1,11 +1,13 @@
 import Link from "next/link";
 import { overview } from "@/lib/admindb";
+import { outboxStats } from "@/lib/outbox";
 import { Badge, Card, Grid, Stat } from "@/components/ui";
 
 const fmt = (x: Date) => new Date(x).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
 
 export default async function AdminHome() {
   const o = await overview();
+  const mail = await outboxStats();
   const total = o.users.reduce((a, r) => a + r.n, 0);
   return (
     <>
@@ -22,6 +24,11 @@ export default async function AdminHome() {
           <p>{o.pays.filter((p) => ["releasing", "refunding"].includes(p.status)).reduce((a, p) => a + p.n, 0) > 0
             ? <Badge tone="yellow">Payments stuck mid-processing</Badge> : <Badge tone="green">No payments mid-processing</Badge>}</p>
           <p>{o.failedJobs > 0 ? <Badge tone="red">{o.failedJobs} failed job run{o.failedJobs > 1 ? "s" : ""} this week</Badge> : <Badge tone="green">No failed jobs this week</Badge>}</p>
+        </Card>
+        <Card title="Email delivery">
+          <p>{mail.dead > 0 ? <Badge tone="red">{mail.dead} notice{mail.dead > 1 ? "s" : ""} could not be delivered</Badge> : <Badge tone="green">No undeliverable notices</Badge>}</p>
+          <p>{mail.pending > 0 ? <Badge tone={mail.oldestPendingMinutes !== null && mail.oldestPendingMinutes > 60 ? "yellow" : "gray"}>{mail.pending} waiting to send{mail.oldestPendingMinutes !== null ? ` (oldest ${mail.oldestPendingMinutes} min)` : ""}</Badge> : <Badge tone="green">Nothing waiting</Badge>}</p>
+          <p className="muted">Security, signing and deal notices are retried automatically for about 9 hours. Sign-in links aren&apos;t queued: people can ask for a new one.</p>
         </Card>
         <Card title="Payments"><table><tbody>{o.pays.length ? o.pays.map((r) => <tr key={r.status}><td>{r.status}</td><td>{r.n}</td></tr>) : <tr><td className="muted">None.</td></tr>}</tbody></table></Card>
         <Card title="Scheduled jobs (latest run)" wide>

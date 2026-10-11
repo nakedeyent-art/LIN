@@ -1,5 +1,6 @@
 import { db } from "./db";
-import { appUrl, sendMail } from "./mailer";
+import { appUrl } from "./mailer";
+import { sendNotice } from "./outbox";
 import { createHash } from "node:crypto";
 import { THREAD_PAGE } from "./messaging";
 import { MAX_FILES_PER_DEAL } from "./attachments";
@@ -94,5 +95,5 @@ export async function insertMessage(dealId: string, senderId: string, body: stri
 export async function notifyNewMessage(dealId: string, r: { emails: string[]; others: string[]; title: string }): Promise<void> {
   for (const uid of r.others) await notifyInApp([uid], { kind: "message", title: messageTitle(r.title, 1), href: `/dashboard/deals/${dealId}/messages`, coalesceKey: `msg:${dealId}` });
   const text = `You have a new message on a NIL deal.\n\nLog in to read and reply: ${appUrl()}/dashboard/deals/${dealId}/messages\n\nYou can change which emails you get under Settings.`;
-  await Promise.all(r.emails.map((e) => sendMail(e, "New message on a NIL deal", text).catch((err) => console.error("message notification failed", err))));
+  await Promise.all(r.emails.map((e) => sendNotice(e, "New message on a NIL deal", text)));
 }

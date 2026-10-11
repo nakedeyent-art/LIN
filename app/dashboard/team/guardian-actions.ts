@@ -6,7 +6,7 @@ import { DELETE_PHRASE, maskEmail } from "@/lib/account";
 import { moneyInFlightCount, openDealCount, purgeAndAnonymize } from "@/lib/account-deletion";
 import { canInviteGuardian, checkRemoval } from "@/lib/guardianship";
 import { logGuardianEvent, unlistIfNoGuardian } from "@/lib/guardians";
-import { sendMail } from "@/lib/mailer";
+import { sendNotice } from "@/lib/outbox";
 import { checkPassword } from "@/lib/reauth";
 import { requireAccess } from "@/lib/session";
 import { sendGuardianInvite } from "@/lib/verification";
@@ -14,7 +14,7 @@ import { sendGuardianInvite } from "@/lib/verification";
 const UUID = /^[0-9a-f-]{36}$/i;
 const str = (f: FormData, k: string) => String(f.get(k) ?? "").trim();
 const done = (key: "msg" | "error", m: string): never => redirect(`/dashboard/team?${key}=${encodeURIComponent(m)}`);
-const notify = async (to: string, subject: string, text: string) => { try { await sendMail(to, subject, text); } catch (e) { console.error("guardian notice failed", e); } };
+const notify = (to: string, subject: string, text: string) => sendNotice(to, subject, text);
 
 /** Authority check used by every guardian action: a linked parent of an athlete who is STILL a minor. */
 async function requireGuardianOf(athleteId: string) {

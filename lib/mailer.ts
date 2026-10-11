@@ -20,6 +20,7 @@ export async function sendMail(to: string, subject: string, text: string): Promi
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+    signal: AbortSignal.timeout(10_000),
     body: JSON.stringify({ from: process.env.MAIL_FROM ?? "LIN <onboarding@resend.dev>", to, subject, text }),
   });
   if (!res.ok) throw new Error(`mail provider responded ${res.status}`);

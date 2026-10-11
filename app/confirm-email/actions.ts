@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { hashToken } from "@/lib/crypto";
 import { maskEmail } from "@/lib/account";
-import { sendMail } from "@/lib/mailer";
+import { sendNotice } from "@/lib/outbox";
 import { endOtherSessions, getSession } from "@/lib/session";
 
 export async function confirmEmailChange(formData: FormData) {
@@ -35,7 +35,7 @@ export async function confirmEmailChange(formData: FormData) {
 
   await endOtherSessions(s.userId);
   try {
-    await sendMail(oldEmail, "Your LIN email address was changed",
+    await sendNotice(oldEmail, "Your LIN email address was changed",
       `Your LIN account email was changed to ${maskEmail(newEmail)} and your other devices were signed out.\nIf this wasn't you, contact support immediately.`);
   } catch (e) { console.error("email-change notice failed", e); }
   redirect(`/dashboard/settings?msg=${encodeURIComponent("Email address updated.")}`);
