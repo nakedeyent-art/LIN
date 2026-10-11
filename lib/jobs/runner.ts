@@ -1,5 +1,6 @@
 import { runScoutingWatch } from "./scouting-watch";
 import { runOperationsReminders } from "./operations";
+import { runUploadScan } from "./upload-scan";
 import { db } from "../db";
 import { runAdultTransition, type JobResult } from "./adult-transition";
 import { retryStuckPayments } from "../payments";
@@ -23,6 +24,8 @@ const JOBS: { name: string; run: (o: { dry: boolean }) => Promise<JobResult> }[]
       const r = await drainOutbox(500);
       return { processed: r.sent, skipped: r.retrying, failed: r.dead };   // a message that exhausted its retries is a real failure
     } },
+  // Releases (or quarantines) uploads accepted in async scan mode. Early, so files become usable as soon as possible.
+  { name: "upload-scan", run: runUploadScan },
   { name: "adult-transition", run: runAdultTransition },
   { name: "operations-reminders", run: runOperationsReminders },
   { name: "scouting-watch", run: runScoutingWatch },

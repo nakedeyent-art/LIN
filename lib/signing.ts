@@ -1,3 +1,4 @@
+import { loadVersion, versionBytes, assertServable } from './file-store';
 import { completeLinkedDeal } from "./deal-signing";
 import type { PoolClient } from "pg";
 import type { Session } from "./session";
@@ -43,7 +44,9 @@ export async function createEnvelope(s:Session,documentId:string,days:number) {
   if(!d||d.status!=='active'||d.category!=='contracts'||!await familyAuthority(s.userId,d.athlete_id,c))throw new Error("Choose an active agreement that you manage.");
   const v=(await c.query("SELECT * FROM document_versions WHERE document_id=$1 ORDER BY version DESC LIMIT 1",[documentId])).rows[0];
   if(!v||v.media_type!=='application/pdf')throw new Error("Signing requires a PDF. Convert the Office document to PDF first.");
-  const pdf=await PDFDocument.load(v.contents);
+  assertServable(v);   // a quarantined or unscanned file is never pinned into an agreement
+  const bytes=await versionBytes(v);if(!bytes)throw new Error("The document's file is missing.");
+  const pdf=await PDFDocument.load(bytes);
   if(pdf.getPageCount()>200)throw new Error("Agreements must have at most 200 pages.");
   const e=(await c.query(`INSERT INTO signing_envelopes(document_id,version_id,athlete_id,deal_id,event_id,created_by,title,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7,now()+make_interval(days=>$8)) RETURNING id`,[d.id,v.id,d.athlete_id,d.deal_id,d.event_id,s.userId,d.title,days])).rows[0];
   await signingAudit(c,e.id,s.userId,'envelope.created');await c.query('COMMIT');return e.id as string;
@@ -67,8 +70,8 @@ export async function addField(s:Session,id:string,input:{recipient:string;kind:
  try {await c.query('BEGIN');await lockDealThenEnvelope(c,id);
   const e=await getEnvelope(s,id,c);
   if(!e||e.status!=='draft'||!await familyAuthority(s.userId,e.athlete_id,c))throw new Error("Only the family can configure a draft.");
-  const v=(await c.query('SELECT contents FROM document_versions WHERE id=$1',[e.version_id])).rows[0];
-  const pdf=await PDFDocument.load(v.contents);
+  const v=await loadVersion(e.version_id,c);const vb=v&&await versionBytes(v);if(!vb)throw new Error("The document's file is missing.");
+  const pdf=await PDFDocument.load(vb);
   if(input.page>pdf.getPageCount())throw new Error("This page does not exist in the PDF.");
   if((await c.query('SELECT count(*)::int n FROM signing_fields WHERE envelope_id=$1',[id])).rows[0].n>=150)throw new Error("An agreement supports up to 150 fields.");
   await c.query('INSERT INTO signing_fields(envelope_id,recipient_id,kind,label,page,x,y,width,required) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)',[id,input.recipient,input.kind,input.label,input.page,input.x,input.y,input.width,input.required]);
@@ -136,7 +139,8 @@ export async function signEnvelope(s:Session,id:string,token:string,values:Recor
    if(f.kind==='checkbox'&&v&&v!=='Yes')throw new Error("Invalid checkbox value.");
    clean[f.id]=v;
   }
-  const source=(await c.query('SELECT contents,sha256 FROM document_versions WHERE id=$1',[e.version_id])).rows[0];
+  const sourceRow=await loadVersion(e.version_id,c);if(!sourceRow)throw new Error("The document's file is missing.");assertServable(sourceRow);
+  const sourceBytes=await versionBytes(sourceRow);if(!sourceBytes)throw new Error("The document's file is missing.");const source={contents:sourceBytes,sha256:sourceRow.sha256};
   // Reject values that cannot fit before accepting irreversible evidence.
   await completedPdf(source.contents,fields,clean);
   await c.query('INSERT INTO signing_evidence(envelope_id,recipient_id,user_id,document_sha256,field_values,consent_version) VALUES($1,$2,$3,$4,$5,$6)',[id,r.id,s.userId,source.sha256,JSON.stringify(clean),SIGNING_CONSENT]);

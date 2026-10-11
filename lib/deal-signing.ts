@@ -5,6 +5,7 @@ import { capacityOn } from './dealsdb';
 import { textPdf,pdfHash } from './signing-pdf';
 import { PDFDocument } from 'pdf-lib';
 import { validId } from './operations';
+import { storeVersion } from './file-store';
 import { ESIGN_CONSENT_VERSION } from './contract';
 /** Generate Forg3 from the frozen contract, never from submitted terms. Existing signed legacy contracts stay intact. */
 export async function prepareDealSigning(s:Session,dealId:string) {
@@ -34,7 +35,7 @@ export async function prepareDealSigning(s:Session,dealId:string) {
   if(minor&&!guardian)throw new Error('A current guardian is required.');
   const pdf=await PDFDocument.load(await textPdf(d.title,k.body));pdf.addPage();const bytes=await pdf.save(),page=pdf.getPageCount();
   const doc=(await c.query("INSERT INTO athlete_documents(athlete_id,deal_id,title,category,created_by) VALUES($1,$2,$3,'contracts',$4) RETURNING id",[d.athlete_id,d.id,d.title,s.userId])).rows[0];
-  const version=(await c.query("INSERT INTO document_versions(document_id,version,file_name,media_type,contents,sha256,uploaded_by,size_bytes) VALUES($1,1,'nil-agreement.pdf','application/pdf',$2,$3,$4,$5) RETURNING id",[doc.id,Buffer.from(bytes),pdfHash(bytes),s.userId,bytes.byteLength])).rows[0];
+  const version=await storeVersion(c,{documentId:doc.id,fileName:'nil-agreement.pdf',mediaType:'application/pdf',bytes,sha256:pdfHash(bytes),uploadedBy:s.userId,scanStatus:'clean'});   // generated here, not uploaded: nothing to scan
   const env=(await c.query("INSERT INTO signing_envelopes(document_id,version_id,athlete_id,deal_id,created_by,title,expires_at,legacy_contract_id) VALUES($1,$2,$3,$4,$5,$6,COALESCE($7,now()+INTERVAL '30 days'),$8) RETURNING id",[doc.id,version.id,d.athlete_id,d.id,s.userId,d.title,d.expires_at,k.id])).rows[0];
   const parties=[{user:d.counterparty_id,capacity:'sponsor'},{user:guardian??d.athlete_id,capacity:minor?'guardian':'athlete'}];
   for(const [index,p] of parties.entries()){

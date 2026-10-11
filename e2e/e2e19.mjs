@@ -46,8 +46,14 @@ try {
    const f=g.locator('form').filter({has:g.locator('[name=action][value=field]')});const x=Number(await f.locator('[name=x]').inputValue()),y=Number(await f.locator('[name=y]').inputValue()),w=Number(await f.locator('[name=width]').inputValue());
    ok(Math.abs(x-50)<=2&&Math.abs(y-20)<=2&&Math.abs(w-30)<=3,`clicking the rendered page places the field (got ${x},${y},${w})`); }
  for(const [i,id] of recipients.entries()){
-  await openDetails(g,'Add signing field','form:has([name=action][value=field]) [name=recipient_id]');const f=g.locator('form').filter({has:g.locator('[name=action][value=field]')});await f.locator('[name=recipient_id]').selectOption(id);await f.locator('[name=label]').fill('Full name');await f.locator('[name=y]').fill(String(30+i*20));await submitAndWait(g,f.getByRole('button',{name:'Add field'}));
+  await g.goto(g.url(),{waitUntil:'networkidle'});   // after a server-action redirect Next re-commits the tree a moment later, remounting client forms: start each field from a settled page
+  await openDetails(g,'Add signing field','form:has([name=action][value=field]) [name=recipient_id]');await g.locator('.placer-page').first().waitFor({timeout:45000});   // rendered pages mean React has hydrated; choosing before that is reset by hydration
+  const f=g.locator('form').filter({has:g.locator('[name=action][value=field]')});await f.locator('[name=recipient_id]').selectOption(id);await f.locator('[name=label]').fill('Full name');await f.locator('[name=y]').fill(String(30+i*20));
+  if(process.env.E2E_DEBUG){g.on('console',m=>console.log('CONSOLE',m.type(),m.text().slice(0,200)));g.on('request',r=>{if(r.method()==='POST')console.log('REQ',r.url(),r.headers()['next-action']?'action':'');});g.on('requestfailed',r=>console.log('REQFAIL',r.url(),r.failure()?.errorText));
+   console.log('DBG valid',await f.evaluate(fm=>fm.checkValidity()),'values',await f.evaluate(fm=>JSON.stringify(Object.fromEntries(new FormData(fm)))));}
+  await submitAndWait(g,f.getByRole('button',{name:'Add field'}));
  }
+ await g.goto(g.url(),{waitUntil:'networkidle'});
  await submitAndWait(g,g.getByRole('button',{name:'Send for signature'}));ok(sql(`SELECT status FROM signing_envelopes WHERE id='${envelope}'`)==='sent','configured agreement can be sent');
  const half=await pageFor(athlete,true);ok((await half.request.get(`${B}/dashboard/signing/${envelope}/download`)).status()===401,'MFA-pending session cannot download the agreement');await half.context().close();
  for(const [p,name] of [[a,'Athlete'],[g,'Guardian']]){

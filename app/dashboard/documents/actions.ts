@@ -7,6 +7,7 @@ import { db } from "@/lib/db";
 import { validId } from "@/lib/operations";
 import { DOCUMENT_CATEGORIES, validateDocumentFile, readableDocument, lockDocumentFamily, assertUploadAllowed, UploadLimitError } from "@/lib/documents";
 import { scanUpload } from "@/lib/upload-scan";
+import { storeVersion, scanMode } from "@/lib/file-store";
 
 export async function uploadDocument(form: FormData) {
  const s = await requireUser();
@@ -22,7 +23,8 @@ export async function uploadDocument(form: FormData) {
  const bytes=Buffer.from(await file.arrayBuffer());
  let checked;
  try { checked=validateDocumentFile(file.name,bytes); await validateOfficePackage(file.name,bytes); } catch(e) { fail((e as Error).message); }
- const scan=await scanUpload(bytes); if(!scan.ok) fail(scan.message);
+ // Inline scanning refuses a bad file on the spot; async mode accepts it into quarantine and the scan job releases (or quarantines) it.
+ const mode=scanMode(); if(mode==="inline"){ const scan=await scanUpload(bytes); if(!scan.ok) fail(scan.message); }
  const expires=String(form.get("expires_on")??"");
  if(expires && (!/^\d{4}-\d{2}-\d{2}$/.test(expires) || !Number.isFinite(Date.parse(expires)))) fail("Enter a valid expiration date.");
  const folder=String(form.get("folder")??"").trim().slice(0,100), tags=String(form.get("tags")??"").split(",").map(t=>t.trim().slice(0,40)).filter(Boolean).slice(0,12);
@@ -38,7 +40,7 @@ export async function uploadDocument(form: FormData) {
   } else {
    id=(await c.query(`INSERT INTO athlete_documents(athlete_id,title,category,folder,tags,expires_on,created_by) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id`,[athleteId,title,category,folder,tags,expires||null,s.userId])).rows[0].id;
   }
-  await c.query(`INSERT INTO document_versions(document_id,version,file_name,media_type,contents,sha256,uploaded_by,size_bytes) SELECT $1,COALESCE(MAX(version),0)+1,$2,$3,$4,$5,$6,$7 FROM document_versions WHERE document_id=$1`,[id,checked!.fileName,checked!.mediaType,bytes,checked!.sha256,s.userId,bytes.byteLength]);
+  await storeVersion(c,{documentId:id!,fileName:checked!.fileName,mediaType:checked!.mediaType,bytes,sha256:checked!.sha256,uploadedBy:s.userId,scanStatus:mode==='async'?'pending':'clean'});
   await c.query("INSERT INTO operations_activity(athlete_id,actor_id,document_id,action) VALUES($1,$2,$3,$4)",[athleteId,s.userId,id,documentId?"document.version_added":"document.uploaded"]);
   await c.query("COMMIT");
  } catch(e) { await c.query("ROLLBACK"); fail(e instanceof UploadLimitError || (e instanceof Error && /access changed|active documents/.test(e.message))?(e as Error).message:"The document could not be saved. Check its details and try again."); } finally {c.release();}
