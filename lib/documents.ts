@@ -10,6 +10,31 @@ export type DocumentCategory = typeof DOCUMENT_CATEGORIES[number];
 export type DocumentRow = { id: string; athlete_id: string; title: string; folder: string; category: DocumentCategory; tags: string[]; access_scope: string; expires_on: string | null; status: string; created_at: Date; deal_id: string | null; event_id: string | null; created_by: string; uploader_name?:string; granted?: boolean };
 export const categoryLabel = (s: string) => s.replaceAll("_", " ");
 export const MAX_DOCUMENT_BYTES = 5 * 1024 * 1024;
+export const MAX_ATHLETE_STORAGE_BYTES = 250 * 1024 * 1024;
+export const MAX_VERSIONS_PER_DOCUMENT = 50;
+export const MAX_DOCUMENTS_PER_ATHLETE = 500;
+/** A limit the person can understand and act on (shown verbatim), as opposed to an internal failure. */
+export class UploadLimitError extends Error {}
+
+export async function storageUsed(athleteId: string, c: Pick<import('pg').PoolClient,'query'> = db()): Promise<{ bytes: number; documents: number }> {
+  const r = (await c.query(`SELECT COALESCE(sum(octet_length(v.contents)),0)::float8 AS bytes, count(DISTINCT d.id)::int AS documents
+    FROM athlete_documents d LEFT JOIN document_versions v ON v.document_id=d.id WHERE d.athlete_id=$1`, [athleteId])).rows[0];
+  return { bytes: Number(r.bytes), documents: r.documents };
+}
+
+/**
+ * Called inside the upload transaction. Takes a per-athlete advisory lock so two simultaneous uploads cannot both squeeze under a limit.
+ * Limits: total bytes stored per athlete, versions per document, documents per athlete.
+ */
+export async function assertUploadAllowed(c: import('pg').PoolClient, athleteId: string, documentId: string | null, addBytes: number) {
+  await c.query("SELECT pg_advisory_xact_lock(hashtextextended('docquota:'||$1, 0))", [athleteId]);
+  const used = await storageUsed(athleteId, c);
+  if (used.bytes + addBytes > MAX_ATHLETE_STORAGE_BYTES) throw new UploadLimitError(`This record has used ${Math.round(used.bytes / 1048576)} MB of its ${MAX_ATHLETE_STORAGE_BYTES / 1048576} MB. Remove or archive documents you no longer need first.`);
+  if (documentId) {
+    const v = (await c.query('SELECT count(*)::int AS n FROM document_versions WHERE document_id=$1', [documentId])).rows[0].n;
+    if (v >= MAX_VERSIONS_PER_DOCUMENT) throw new UploadLimitError(`A document can have up to ${MAX_VERSIONS_PER_DOCUMENT} versions. Upload this as a new document instead.`);
+  } else if (used.documents >= MAX_DOCUMENTS_PER_ATHLETE) throw new UploadLimitError(`A record can hold up to ${MAX_DOCUMENTS_PER_ATHLETE} documents.`);
+}
 
 /** Sharing is explicit per document; relationship and category consent must both still be current. */
 export function canReadDocument(a: Subject, d: Pick<DocumentRow,"category"|"access_scope"|"granted">): boolean {

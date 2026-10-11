@@ -7,6 +7,7 @@ import { cleanText, followDecision, type CommentState, type ComposeState, MAX_CO
 import { screenText } from "@/lib/content-filter";
 import { MAX_FILE_BYTES, formatBytes, sniff } from "@/lib/attachments";
 import { stripImage } from "@/lib/images";
+import { scanUpload } from "@/lib/upload-scan";
 import { parseMusicLink } from "@/lib/music";
 import { isReason, MAX_NOTE, MAX_REPORTS_PER_DAY } from "@/lib/reports";
 import { notifyInApp } from "@/lib/notificationsdb";
@@ -42,6 +43,8 @@ export async function createPost(_prev: ComposeState, formData: FormData): Promi
     if (!sn || sn.type === "application/pdf") return fail("Pictures must be PNG or JPEG.");
     const named = screenText(f.name.replace(/\.[^.]*$/, ""), { minorThread: minor, paymentsOn: false });
     if (!named.ok) return fail(named.error);
+    const scan = await scanUpload(raw);
+    if (!scan.ok) return fail(scan.message);
     const clean = stripImage(sn.type, raw);
     if (!clean) return fail("That picture looks damaged. Try saving it again.");
     img = { type: sn.type, bytes: clean };

@@ -5,7 +5,8 @@ import { requireUser } from "@/lib/session";
 import { subjectFor, canEditFamily } from "@/lib/access";
 import { db } from "@/lib/db";
 import { validId } from "@/lib/operations";
-import { DOCUMENT_CATEGORIES, validateDocumentFile, readableDocument, lockDocumentFamily } from "@/lib/documents";
+import { DOCUMENT_CATEGORIES, validateDocumentFile, readableDocument, lockDocumentFamily, assertUploadAllowed, UploadLimitError } from "@/lib/documents";
+import { scanUpload } from "@/lib/upload-scan";
 
 export async function uploadDocument(form: FormData) {
  const s = await requireUser();
@@ -21,6 +22,7 @@ export async function uploadDocument(form: FormData) {
  const bytes=Buffer.from(await file.arrayBuffer());
  let checked;
  try { checked=validateDocumentFile(file.name,bytes); await validateOfficePackage(file.name,bytes); } catch(e) { fail((e as Error).message); }
+ const scan=await scanUpload(bytes); if(!scan.ok) fail(scan.message);
  const expires=String(form.get("expires_on")??"");
  if(expires && (!/^\d{4}-\d{2}-\d{2}$/.test(expires) || !Number.isFinite(Date.parse(expires)))) fail("Enter a valid expiration date.");
  const folder=String(form.get("folder")??"").trim().slice(0,100), tags=String(form.get("tags")??"").split(",").map(t=>t.trim().slice(0,40)).filter(Boolean).slice(0,12);
@@ -29,6 +31,7 @@ export async function uploadDocument(form: FormData) {
  try {
   await c.query("BEGIN");
   await lockDocumentFamily(c,athleteId,s.userId);
+  await assertUploadAllowed(c,athleteId,id||null,bytes.length);
   if(id) {
    const d=(await c.query("SELECT status FROM athlete_documents WHERE id=$1 AND athlete_id=$2 FOR UPDATE",[id,athleteId])).rows[0];
    if(!d || d.status!=="active") throw new Error("Only active documents accept new versions.");
@@ -38,7 +41,7 @@ export async function uploadDocument(form: FormData) {
   await c.query(`INSERT INTO document_versions(document_id,version,file_name,media_type,contents,sha256,uploaded_by) SELECT $1,COALESCE(MAX(version),0)+1,$2,$3,$4,$5,$6 FROM document_versions WHERE document_id=$1`,[id,checked!.fileName,checked!.mediaType,bytes,checked!.sha256,s.userId]);
   await c.query("INSERT INTO operations_activity(athlete_id,actor_id,document_id,action) VALUES($1,$2,$3,$4)",[athleteId,s.userId,id,documentId?"document.version_added":"document.uploaded"]);
   await c.query("COMMIT");
- } catch(e) { await c.query("ROLLBACK"); fail(e instanceof Error && /access changed|active documents/.test(e.message)?e.message:"The document could not be saved. Check its details and try again."); } finally {c.release();}
+ } catch(e) { await c.query("ROLLBACK"); fail(e instanceof UploadLimitError || (e instanceof Error && /access changed|active documents/.test(e.message))?(e as Error).message:"The document could not be saved. Check its details and try again."); } finally {c.release();}
  redirect(`/dashboard/documents/${id}`);
 }
 

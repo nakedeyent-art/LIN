@@ -55,6 +55,7 @@ export async function attachScoutingMedia(form:FormData) {
  const {checkUploads}=await import('@/lib/attachments');
  const checked=checkUploads([{name:file.name,bytes:new Uint8Array(await file.arrayBuffer())}],0);
  if(!checked.ok)redirect(`/dashboard/scouting/${report.athlete_id}?error=${encodeURIComponent(checked.error)}`);
+ const {scanUpload}=await import('@/lib/upload-scan');const scan=await scanUpload(checked.files[0].bytes);if(!scan.ok)redirect(`/dashboard/scouting/${report.athlete_id}?error=${encodeURIComponent(scan.message)}`);
  const c=await db().connect();let failure='';
  try {
   await c.query('BEGIN');
@@ -62,6 +63,9 @@ export async function attachScoutingMedia(form:FormData) {
   if(!current.rowCount)throw new Error('Report is no longer available');
   const count=(await c.query('SELECT count(*)::int n FROM scouting_attachments WHERE report_id=$1',[id])).rows[0].n;
   if(count>=20)throw new Error('This report has reached its limit of 20 attachments');
+  await c.query("SELECT pg_advisory_xact_lock(hashtextextended('scoutquota:'||$1,0))",[s.userId]);
+  const mine=Number((await c.query('SELECT COALESCE(sum(octet_length(contents)),0)::float8 n FROM scouting_attachments WHERE uploader_id=$1',[s.userId])).rows[0].n);
+  if(mine+checked.files[0].bytes.length>200*1024*1024)throw new Error('You have used your 200 MB of scouting media. Remove some before adding more.');
   const f=checked.files[0];await c.query('INSERT INTO scouting_attachments(report_id,uploader_id,file_name,media_type,contents) VALUES($1,$2,$3,$4,$5)',[id,s.userId,f.filename,f.type,Buffer.from(f.bytes)]);
   await c.query('COMMIT');
  }catch(e){await c.query('ROLLBACK');failure=e instanceof Error?e.message:'Could not attach file';}finally{c.release();}
