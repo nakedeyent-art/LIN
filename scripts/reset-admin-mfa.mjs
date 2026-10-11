@@ -10,10 +10,11 @@ try {
   await c.query("BEGIN");
   const u = (await c.query("SELECT id, is_admin, deleted_at FROM users WHERE email=$1 FOR UPDATE", [email])).rows[0];
   if (!u || u.deleted_at || !u.is_admin) { await c.query("ROLLBACK"); console.error("No such admin account."); process.exit(1); }
+  await c.query("UPDATE users SET mfa_reenrollment_required=TRUE WHERE id=$1", [u.id]);
   await c.query("DELETE FROM user_recovery_codes WHERE user_id=$1", [u.id]);
   await c.query("DELETE FROM user_mfa WHERE user_id=$1", [u.id]);
   await c.query("DELETE FROM sessions WHERE user_id=$1", [u.id]);
   await c.query("INSERT INTO admin_audit(admin_id, action, target_user_id, detail) VALUES ($1,'mfa_reset',$1,$2)", [u.id, `reset from the server: ${reason}`.slice(0, 500)]);
   await c.query("COMMIT");
-  console.log(`${email}: two-factor removed and sessions ended. They will enrol again at their next visit to /admin.`);
+  console.log(`${email}: two-factor removed and sessions ended. Re-enrollment is required before any account access.`);
 } finally { await c.end(); }

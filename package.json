@@ -8,24 +8,44 @@
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "db:migrate": "node --env-file-if-exists=.env.local scripts/migrate.mjs"
+    "db:migrate": "node --env-file-if-exists=.env.local scripts/migrate.mjs",
+    "test:e2e": "node e2e/e2e18.mjs",
+    "test:e2e:admin": "node e2e/e2e17.mjs",
+    "test:e2e:settings": "node e2e/e2e6.mjs",
+    "test:app": "node e2e/start-local.mjs",
+    "test:integration": "vitest run --config vitest.integration.config.mts",
+    "test:e2e:operations": "node e2e/e2e19.mjs"
   },
   "dependencies": {
+    "@pdf-lib/fontkit": "^1.1.1",
     "fast-xml-parser": "^5.11.2",
+    "leaflet": "^1.9.4",
     "next": "^15.0.0",
+    "pdf-lib": "^1.17.1",
     "pg": "^8.23.1",
     "qrcode": "^1.5.4",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "yauzl": "^3.4.0"
   },
   "devDependencies": {
+    "@types/leaflet": "^1.9.22",
     "@types/node": "^22.0.0",
     "@types/pg": "^8.23.1",
     "@types/qrcode": "^1.5.6",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "@types/yauzl": "^2.10.3",
+    "playwright": "^1.64.0",
     "stripe": "^23.0.0",
     "typescript": "^5.6.0",
-    "vitest": "^2.1.0"
+    "vite": "^8.3.4",
+    "vitest": "^5.0.3"
+  },
+  "overrides": {
+    "postcss": "^8.5.29"
+  },
+  "engines": {
+    "node": "^22.12.0 || ^24.0.0 || >=26.0.0"
   }
 }

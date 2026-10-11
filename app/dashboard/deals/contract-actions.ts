@@ -2,7 +2,7 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
-import { requireAccess } from "@/lib/session";
+import { requireAccess, requireRecentMfa } from "@/lib/session";
 import { capacityOn, dealContext, notifyDeal, type DealRow } from "@/lib/dealsdb";
 import { canSign, ESIGN_CONSENT_VERSION, executionState, nameMatches, type SigRole } from "@/lib/contract";
 import { notifyDealParties } from "@/lib/payments";
@@ -21,6 +21,7 @@ export async function signContract(formData: FormData) {
   const back = (msg: string): never => redirect(`/dashboard/deals/${dealId}/contract?error=${encodeURIComponent(msg)}`);
   if (!UUID.test(dealId)) redirect("/dashboard/deals");
   if (formData.get("consent") !== "on") back("Tick the box to confirm you agree to sign electronically.");
+  await requireRecentMfa(s, `/dashboard/deals/${dealId}/contract`);
 
   const h = await headers();
   const ip = (h.get("x-forwarded-for")?.split(",")[0] ?? h.get("x-real-ip") ?? "").trim().slice(0, 64) || null;
@@ -39,6 +40,7 @@ export async function signContract(formData: FormData) {
     if (!who) { await client.query("ROLLBACK"); redirect("/dashboard/deals"); }
     const k = (await client.query("SELECT id, sha256, voided_at, executed_at FROM contracts WHERE deal_id=$1", [dealId])).rows[0];
     if (!k) { await client.query("ROLLBACK"); return back("There is no agreement to sign yet."); }
+    if ((await client.query("SELECT 1 FROM signing_envelopes WHERE legacy_contract_id=$1", [k.id])).rowCount) { await client.query("ROLLBACK"); return back("This agreement uses Forg3. Open its signing workspace to continue."); }
     const existing = (await client.query("SELECT signer_user_id, signer_role FROM contract_signatures WHERE contract_id=$1", [k.id])).rows;
     const ctx = await dealContext(d, client);
     const check = canSign({

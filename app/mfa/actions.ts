@@ -1,6 +1,6 @@
 "use server";
 import { redirect } from "next/navigation";
-import { currentTokenHash, endOtherSessions, requireMfaPage } from "@/lib/session";
+import { currentTokenHash, requireMfaPage } from "@/lib/session";
 import { checkPassword } from "@/lib/reauth";
 import type { CodesState } from "@/lib/mfa";
 import { completeEnrollment, MFA_LOCK_MINUTES, MFA_MAX_FAILS, securityEvent, verifySecondStep } from "@/lib/mfa";
@@ -19,9 +19,6 @@ export async function enrollMfa(_prev: CodesState, formData: FormData): Promise<
   if (!tok) return { error: "Please sign in again." };
   const r = await completeEnrollment(s.userId, String(formData.get("code") ?? ""), tok);
   if ("error" in r) return { error: r.error };
-  // Anyone else holding a session on this account (a stolen cookie, say) is signed out now that a second factor protects it.
-  await endOtherSessions(s.userId);
-  await securityEvent(s.userId, "mfa_enabled");
   if (s.isAdmin) await audit(s.userId, "mfa_enrolled", { userId: s.userId, detail: "authenticator app enrolled; recovery codes issued" });
   await notice(s.email, "Two-factor authentication is on for your LIN account",
     "An authenticator app was added to your LIN account and your other devices were signed out. If this wasn't you, change your password now and contact support.");
@@ -33,7 +30,8 @@ export async function verifyMfa(formData: FormData) {
   const s = await requireMfaPage();
   const home = s.isAdmin ? "/admin" : "/dashboard";
   const next = safeNext(String(formData.get("next") ?? ""), home);
-  const back = (m: string): never => redirect(`/mfa/verify?error=${encodeURIComponent(m)}&next=${encodeURIComponent(next)}`);
+  const sensitive = formData.get("sensitive") === "1";
+  const back = (m: string): never => redirect(`/mfa/verify?error=${encodeURIComponent(m)}&next=${encodeURIComponent(next)}${sensitive ? "&sensitive=1" : ""}`);
   const tok = await currentTokenHash();
   if (!tok) redirect("/login");
   const r = await verifySecondStep(s.userId, String(formData.get("code") ?? ""), tok!);

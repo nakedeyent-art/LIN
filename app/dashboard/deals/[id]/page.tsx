@@ -1,3 +1,5 @@
+import { saveDealWork } from "../work-actions";
+import type { ComponentProps } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
@@ -10,7 +12,7 @@ import { describePayment, fundingBlocker } from "@/lib/payment-rules";
 import { livePaymentFor, payeeInfo, reconcilePayment } from "@/lib/payments";
 import { paymentsEnabled } from "@/lib/stripe";
 import { formatBps } from "@/lib/money";
-import { Badge, Card, Disclaimer, Grid, List } from "@/components/ui";
+import { Badge, Card as OriginalCard, Disclaimer, Grid, List } from "@/components/ui";
 import { athleteLabel, StatusBadge } from "@/components/deal-ui";
 import { unreadByDeal } from "@/lib/messagesdb";
 import { dealAction } from "../actions";
@@ -20,11 +22,15 @@ const fmt = (x: Date) => new Date(x).toLocaleString("en-US", { dateStyle: "mediu
 const SIDE_NOTE = "Cancellation after funding needs both sides to agree; the sponsor is then refunded in full.";
 
 export default async function DealDetail({ params, searchParams }: {
-  params: Promise<{ id: string }>; searchParams: Promise<{ error?: string; msg?: string; paid?: string }>;
+  params: Promise<{ id: string }>; searchParams: Promise<{ error?: string; msg?: string; paid?: string; tab?: string }>;
 }) {
   const s = await requireAccess("/dashboard/deals");
   const { id } = await params;
-  const { error, msg, paid } = await searchParams;
+  const { error, msg, paid, tab: requestedTab } = await searchParams;
+  const tabs = ["overview","deliverables","parties","messages","agreement","funding","compliance","activity"];
+  const tab = tabs.includes(requestedTab??"") ? requestedTab! : "overview";
+  const sections:Record<string,string>={Progress:"overview",Deliverables:"deliverables",Messages:"messages",Agreement:"agreement",Payment:"funding","Your decision":"overview",History:"activity"};
+  const Card = (props:ComponentProps<typeof OriginalCard>) => tab==='overview'||sections[props.title]===tab ? <OriginalCard {...props}/> : null;
   let d = await getDeal(s.userId, id);
   if (!d) notFound();
   const who = await capacityOn(s.userId, d);
@@ -35,6 +41,8 @@ export default async function DealDetail({ params, searchParams }: {
   let pay = enabled ? await livePaymentFor(d.id) : null;
   if (pay?.status === "pending_checkout") { await reconcilePayment(pay.id); pay = await livePaymentFor(d.id); }
 
+  const workItems=(await db().query("SELECT w.*,a.filename FROM deal_work_items w LEFT JOIN deal_attachments a ON a.id=w.attachment_id LEFT JOIN deal_messages m ON m.id=a.message_id WHERE w.deal_id=$1 ORDER BY w.due_on",[d.id])).rows;
+  const proofOptions=(await db().query("SELECT a.id,a.filename FROM deal_attachments a JOIN deal_messages m ON m.id=a.message_id WHERE a.deal_id=$1 AND m.hidden_at IS NULL ORDER BY a.created_at DESC",[d.id])).rows;
   const ctx = await dealContext(d);
   const actions = availableActions(ctx, who);
   const events = await dealEvents(d.id);
@@ -68,9 +76,17 @@ export default async function DealDetail({ params, searchParams }: {
       {paid === "1" && pay && pay.status !== "pending_checkout" && !msg && <p className="ok">Thanks — your payment was received.</p>}
       {paid === "1" && pay?.status === "pending_checkout" && <p className="ok">Your payment is processing. This page updates automatically when it lands.</p>}
       {error && <p role="alert" className="error">{error}</p>}
+      <nav className="record-tabs" aria-label="Deal sections">{tabs.map(t=><Link key={t} href={`?tab=${t}`} aria-current={tab===t?'page':undefined}>{t[0].toUpperCase()+t.slice(1)}</Link>)}</nav>
+      {tab==='parties'&&<section className="work-panel"><h2>Parties and permissions</h2><table><tbody><tr><td>Athlete</td><td>{athleteLabel(d,s.userId,who==='guardian')}</td></tr><tr><td>Counterparty</td><td>{d.counterparty_name}</td></tr><tr><td>Your role</td><td>{who}</td></tr></tbody></table><p className="muted">The parties and current guardians can access this record. Team relationships alone do not grant deal access.</p></section>}
+      {tab==='compliance'&&<section className="work-panel"><h2>Compliance checks</h2><p>{d.attested_at?'NIL compensation attestation recorded.':'Compensation attestation pending.'}</p><p>{d.athlete_minor?'Guardian approval is required for this athlete.':'Athlete is an adult.'}</p><p>{k?.executedAt?'Agreement executed.':'Agreement signatures outstanding.'}</p><Link className="record-link" href="/dashboard/compliance">Review compliance guidance →</Link></section>}
       <Grid>
         <Card title="Progress" wide><List items={steps.map(([ok, label]) => <>{ok ? "✅" : "⬜"} {label}</>)} /></Card>
-        <Card title="Deliverables" wide><p style={{ whiteSpace: "pre-wrap" }}>{d.deliverables}</p>
+        <Card title="Deliverables" wide>
+          <h4>Operational checklist</h4><p className="muted">Checklist items coordinate delivery and do not amend the signed agreement. Approving proof does not release payment.</p>
+          <table><thead><tr><th>Item</th><th>Due</th><th>Status / proof</th><th>Action</th></tr></thead><tbody>{workItems.map(item=><tr key={item.id}><td>{item.title}</td><td>{new Date(item.due_on).toISOString().slice(0,10)}</td><td>{item.status.replaceAll('_',' ')}{item.attachment_id&&proofOptions.some(a=>a.id===item.attachment_id)&&<p><a className="record-link" href={`/dashboard/deals/${id}/attachments/${item.attachment_id}`}>{item.filename}</a></p>}</td><td>{who==='counterparty'&&item.status==='submitted'?<form action={saveDealWork}><input type="hidden" name="deal_id" value={id}/><input type="hidden" name="item_id" value={item.id}/><button className="btn ghost" name="action" value="accepted">Accept proof</button><button className="btn ghost" name="action" value="changes_requested">Request changes</button></form>:who!=='counterparty'&&item.status!=='accepted'?<form action={saveDealWork}><input type="hidden" name="deal_id" value={id}/><input type="hidden" name="item_id" value={item.id}/><input type="hidden" name="action" value="submit"/><label>Proof attachment<select name="attachment_id" required><option value="">Select message attachment</option>{proofOptions.map(a=><option key={a.id} value={a.id}>{a.filename}</option>)}</select></label><button className="btn ghost">Submit proof</button></form>:null}</td></tr>)}</tbody></table>
+          <p><Link className="record-link" href={`/dashboard/deals/${id}/messages`}>Upload performance evidence in Messages →</Link></p>
+          {who==='counterparty'&&['active','awaiting_signature'].includes(d.status)&&<details><summary>Add checklist item</summary><form className="operation-form" action={saveDealWork}><input type="hidden" name="deal_id" value={id}/><input type="hidden" name="action" value="create"/><label>Deliverable<input type="text" name="title" maxLength={200} required/></label><label>Deadline<input type="date" name="due_on" required/></label><button className="btn ghost">Add deliverable</button></form></details>}
+          <h4>Agreed deliverables</h4><p style={{ whiteSpace: "pre-wrap" }}>{d.deliverables}</p>
           {d.attested_at && <p className="muted">Offerer confirmed this compensation is for NIL deliverables only ({fmt(d.attested_at)}).</p>}
           {d.expires_at && ["offered", "guardian_review", "awaiting_signature"].includes(d.status) && <p className="muted">{d.status === "awaiting_signature" ? "Signing" : "Offer"} expires {fmt(d.expires_at)}.</p>}
         </Card>
@@ -102,7 +118,7 @@ export default async function DealDetail({ params, searchParams }: {
             {pay?.lastError && athleteSide && <p className="muted">Last issue: {pay.lastError}</p>}
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
               {who === "counterparty" && !blocker && <form action={fundDeal}><input type="hidden" name="deal_id" value={d.id} /><button className="btn" type="submit">{pay?.status === "pending_checkout" ? "Continue to payment" : "Fund this deal"}</button></form>}
-              {athleteSide && ["active", "completed"].includes(d.status) && (!payee.valid || payee.userId !== s.userId) && pay?.status !== "released" && pay?.status !== "refunded" &&
+              {athleteSide && ["active", "completed"].includes(d.status) && (!payee.valid || payee.userId !== s.userId) && !["released", "refunded", "refunding"].includes(pay?.status ?? "") && !(pay?.status === "releasing" && pay.attempts > 0) &&
                 <form action={claimPayee}><input type="hidden" name="deal_id" value={d.id} /><button className="btn ghost" type="submit">Receive this payment myself</button></form>}
               {athleteSide && payee.userId === s.userId && !payee.ready && <Link className="btn" href="/dashboard/deals">Finish payout setup</Link>}
             </div>

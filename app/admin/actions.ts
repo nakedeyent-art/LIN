@@ -1,7 +1,7 @@
 "use server";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
-import { requireAdmin } from "@/lib/session";
+import { requireAdmin, requireRecentMfa } from "@/lib/session";
 import { checkPassword } from "@/lib/reauth";
 import { canActOnUser, validateReason, type UserAction } from "@/lib/admin";
 import { audit, targetOf, userForAdmin } from "@/lib/admindb";
@@ -28,6 +28,7 @@ export async function adminUserAction(formData: FormData) {
   if (!UUID.test(id)) redirect("/admin/users");
   const back = (k: "msg" | "error", m: string): never => redirect(`/admin/users/${id}?${k}=${encodeURIComponent(m)}`);
   const { s, reason } = await gate(formData, back);
+  if (action === "reset_mfa") await requireRecentMfa(s, `/admin/users/${id}`);
 
   const client = await db().connect();
   try {
@@ -50,11 +51,12 @@ export async function adminUserAction(formData: FormData) {
     } else if (action === "unlock") {
       await client.query("UPDATE users SET failed_logins=0, locked_until=NULL WHERE id=$1", [id]); msg = "Lockout cleared.";
     } else if (action === "reset_mfa") {
+      await client.query("UPDATE users SET mfa_reenrollment_required=TRUE WHERE id=$1", [id]);
       await client.query("DELETE FROM user_recovery_codes WHERE user_id=$1", [id]);
       await client.query("DELETE FROM user_mfa WHERE user_id=$1", [id]);
       await client.query("DELETE FROM sessions WHERE user_id=$1", [id]);
       await client.query("INSERT INTO security_events(user_id, action) VALUES ($1,'mfa_reset_by_admin')", [id]);
-      msg = "Two-factor removed and the person signed out everywhere. They can set it up again.";
+      msg = "Two-factor removed and the person signed out everywhere. They must set it up again before using their account.";
     } else if (action === "set_birth_date") {
       await client.query("UPDATE athlete_profiles SET birth_date=$2 WHERE user_id=$1", [id, birth]);
       // A minor with no guardian can't be listed to sponsors.
@@ -63,7 +65,7 @@ export async function adminUserAction(formData: FormData) {
     }
     await audit(s.userId, action, { userId: id, detail }, client);
     await client.query("COMMIT");
-    if (action === "reset_mfa") await sendMail(u.email, "Two-factor authentication was removed from your LIN account", "LIN support removed two-factor authentication from your account (you asked for help, or support verified a lost device). You can turn it on again under Settings. If you didn't ask for this, change your password now and reply to this email.").catch(() => {});
+    if (action === "reset_mfa") await sendMail(u.email, "Two-factor authentication was removed from your LIN account", "LIN support reset your two-factor authentication after an account-recovery request. All devices were signed out. Sign in and set up two-factor again before using your account. If you didn't request this, contact support immediately.").catch(() => {});
     if (action === "resend_verification") { await sendVerificationEmail(id, true).catch(() => {}); msg = "Verification email sent."; }
     back("msg", msg);
   } catch (e) {
@@ -78,6 +80,7 @@ export async function adminRetryPayment(formData: FormData) {
   if (!UUID.test(dealId) || !UUID.test(paymentId)) redirect("/admin/deals");
   const back = (k: "msg" | "error", m: string): never => redirect(`/admin/deals/${dealId}?${k}=${encodeURIComponent(m)}`);
   const { s, reason } = await gate(formData, back);
+  await requireRecentMfa(s, `/admin/deals/${dealId}`);
   const p = (await db().query("SELECT status FROM deal_payments WHERE id=$1 AND deal_id=$2", [paymentId, dealId])).rows[0];
   if (!p) back("error", "No such payment.");
   if (!["releasing", "refunding"].includes(p.status)) back("error", "Only a payment that is mid-release or mid-refund can be retried.");

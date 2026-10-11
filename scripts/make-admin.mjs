@@ -6,10 +6,15 @@ if (!email || (flag && flag !== "--revoke")) { console.error("usage: make-admin.
 if (!process.env.DATABASE_URL) { console.error("DATABASE_URL is not set"); process.exit(2); }
 const c = new pg.Client({ connectionString: process.env.DATABASE_URL }); await c.connect();
 try {
-  const u = (await c.query("SELECT id, email_verified_at, deleted_at, is_admin FROM users WHERE email=$1", [email])).rows[0];
+  await c.query("BEGIN");
+  const u = (await c.query("SELECT id, email_verified_at, deleted_at, is_admin FROM users WHERE email=$1 FOR UPDATE", [email])).rows[0];
   if (!u || u.deleted_at) { console.error("No such account."); process.exit(1); }
   if (!flag && !u.email_verified_at) { console.error("That account's email isn't verified yet."); process.exit(1); }
   await c.query("UPDATE users SET is_admin=$2 WHERE id=$1", [u.id, !flag]);
-  if (flag) { await c.query("DELETE FROM sessions WHERE user_id=$1", [u.id]); await c.query("DELETE FROM user_recovery_codes WHERE user_id=$1", [u.id]); await c.query("DELETE FROM user_mfa WHERE user_id=$1", [u.id]); }
-  console.log(`${email}: admin ${flag ? "revoked (sessions ended, two-factor removed)" : "granted — they will be asked to set up two-factor authentication on first visit to /admin"}`);
+  if (flag) await c.query("DELETE FROM sessions WHERE user_id=$1", [u.id]);
+  // MFA belongs to the account, not its admin role. Demotion must preserve its protection.
+  await c.query("COMMIT");
+  console.log(`${email}: admin ${flag ? "revoked (sessions ended, two-factor preserved)" : "granted — they will be asked to set up two-factor authentication on first visit to /admin"}`);
+} catch (e) {
+  await c.query("ROLLBACK"); throw e;
 } finally { await c.end(); }

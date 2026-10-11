@@ -1,3 +1,4 @@
+import { eraseOperations } from "./operations-erasure";
 import { randomBytes } from "node:crypto";
 import type { PoolClient } from "pg";
 import { db } from "./db";
@@ -46,7 +47,7 @@ export async function purgeAndAnonymize(client: PoolClient, id: string, email: s
   await run("UPDATE study_sessions SET verified_by=NULL WHERE verified_by=$1");
   await run("DELETE FROM disclaimer_acceptances WHERE athlete_id=$1 OR accepted_by=$1");
   await run("DELETE FROM recruiting_board WHERE recruiter_id=$1 OR athlete_id=$1");
-  await run("DELETE FROM events WHERE organizer_id=$1");
+  await run("DELETE FROM events WHERE organizer_id=$1 AND NOT EXISTS(SELECT 1 FROM sports_event_details d WHERE d.event_id=events.id) AND NOT EXISTS(SELECT 1 FROM athlete_documents d WHERE d.event_id=events.id) AND NOT EXISTS(SELECT 1 FROM travel_stops s WHERE s.event_id=events.id)");
   await run("DELETE FROM athlete_profiles WHERE user_id=$1");
   await run("DELETE FROM manager_declarations WHERE manager_id=$1");
   await run("UPDATE deal_messages SET body='[message removed]' WHERE sender_id=$1");   // keep the thread intact for the others; the words go
@@ -72,5 +73,6 @@ export async function purgeAndAnonymize(client: PoolClient, id: string, email: s
     `UPDATE users SET email=$2, full_name='Deleted user', password_hash=$3, failed_logins=0, locked_until=NULL,
             email_verified_at=NULL, deleted_at=NOW() WHERE id=$1`,
     [id, `deleted-${id}@deleted.invalid`, "!" + randomBytes(24).toString("hex")]);
+  await eraseOperations(client,id);
   for (const athleteId of guarded) await unlistIfNoGuardian(athleteId, client);
 }

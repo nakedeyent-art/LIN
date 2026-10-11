@@ -38,3 +38,44 @@ input[type=email], input[type=password] { width:100%; }
 .ok { color:#86efac; background:#0f2a1a; border:1px solid #166534; padding:8px 12px; border-radius:8px; }
 .contract { white-space:pre-wrap; background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:20px; font:14px/1.6 ui-serif,Georgia,serif; }
 @media print { .side, .btn, form { display:none !important; } body { background:#fff; color:#000; } .contract, .card { border:0; background:#fff; color:#000; } .main { padding:0; max-width:none; } }
+/* Original operational record layout. */
+:root { --bg:#0b0c0f; --panel:#16181d; --line:#2b2e35; --text:#f2f3f5; --muted:#a2a6b0; }
+.side { width:204px; flex-shrink:0; background:#101115; }
+.main { min-width:0; max-width:1500px; width:100%; }
+.role-chip { background:transparent; color:var(--muted); border:1px solid var(--line); }
+.card { border-top:1px solid var(--line); border-radius:8px; }
+.eyebrow { color:var(--muted); text-transform:uppercase; letter-spacing:.12em; font-size:11px; margin:14px 0 4px; }
+.record-header { display:flex; align-items:center; justify-content:space-between; gap:16px; }
+.record-header h1 { font-size:28px; }
+.status-dot { font-size:12px; color:var(--muted); white-space:nowrap; }
+.status-dot:before { content:'●'; color:#75b49a; margin-right:7px; }
+.record-tabs { display:flex; overflow-x:auto; border-bottom:1px solid var(--line); gap:22px; margin:14px 0 22px; }
+.record-tabs a { padding:10px 0; font-size:13px; color:var(--muted); white-space:nowrap; border-bottom:2px solid transparent; }
+.record-tabs a[aria-current=page] { border-color:var(--text); color:var(--text); }
+.record-columns { display:grid; grid-template-columns:minmax(0,1fr) 235px; gap:24px; }
+.work-panel { background:var(--panel); border:1px solid var(--line); border-radius:6px; padding:20px; min-width:0; overflow-x:auto; }
+.work-panel h2,.activity-rail h2 { font-size:16px; margin:0 0 18px; }
+.work-panel h3 { font-size:13px; margin:22px 0 12px; color:var(--muted); }
+.record-link { text-decoration:underline; text-underline-offset:3px; }
+.activity-rail { border-left:1px solid var(--line); padding-left:20px; font-size:13px; }
+.empty-state { color:var(--muted); padding:24px 0; }
+.action-list { display:grid; gap:16px; }
+:focus-visible { outline:2px solid #a5c4ff; outline-offset:3px; }
+@media(max-width:950px) { .record-columns { grid-template-columns:1fr; } .activity-rail { border-left:0; border-top:1px solid var(--line); padding:20px 0; } }
+@media(max-width:700px) { .side { width:auto; padding:12px; } .side nav { flex-direction:row; overflow-x:auto; margin-top:10px; } .side nav a { white-space:nowrap; } .main { padding:18px 12px; } .record-header { align-items:flex-start; } .work-panel { padding:14px; } }
+.operation-form { display:grid; gap:14px; max-width:640px; margin-top:18px; }
+.operation-form label,.filter-bar label { display:grid; gap:5px; font-size:13px; color:var(--muted); }
+.upload-details { border:1px solid var(--line); border-radius:6px; padding:16px; margin-bottom:20px; }
+.upload-details summary { cursor:pointer; font-weight:600; }
+.filter-bar { display:flex; gap:12px; flex-wrap:wrap; align-items:end; margin:20px 0; }
+.filter-bar input[type=text] { width:200px; }
+.document-preview { width:100%; height:620px; background:white; border:1px solid var(--line); }
+.hash-text { word-break:break-all; font-family:monospace; font-size:11px; }
+.expiration-alert { color:#f8b79b; }
+textarea,input[type=number],input[type=datetime-local] { padding:10px; border-radius:6px; border:1px solid var(--line); background:var(--panel); color:var(--text); font:inherit; }
+.sr-only { position:absolute; width:1px; height:1px; padding:0; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; }
+.report-entry { border-bottom:1px solid var(--line); padding:8px 0 22px; margin-bottom:20px; }
+.office-preview { white-space:pre-wrap; overflow-wrap:anywhere; max-height:620px; overflow:auto; padding:20px; background:#fff; color:#191919; font:14px/1.65 system-ui,sans-serif; }
+.today-list { display:grid; gap:16px; }
+.mobile-primary { display:none; }
+@media(max-width:700px) { .side { position:relative; } .side>form { position:absolute; top:12px; right:12px; margin-top:0!important; } .side>form .btn { padding:6px 10px; font-size:12px; } .main { padding-bottom:86px; } .mobile-primary { display:flex; position:fixed; bottom:0; left:0; right:0; justify-content:space-around; padding:14px 6px max(14px,env(safe-area-inset-bottom)); background:#101115; border-top:1px solid var(--line); z-index:20; font-size:12px; } }

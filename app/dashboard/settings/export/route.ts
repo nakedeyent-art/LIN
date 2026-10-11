@@ -23,6 +23,14 @@ export async function POST() {
     team: await q(`SELECT u.full_name, u.email, r.relationship, r.can_view_academics, r.can_view_health, r.created_at
                      FROM athlete_relationships r JOIN users u ON u.id = r.member_id WHERE r.athlete_id=$1`),
     events: await q("SELECT name, sport, location, starts_on, status FROM events WHERE organizer_id=$1 ORDER BY starts_on"),
+    documents: await q("SELECT id,title,category,folder,tags,status,expires_on,deal_id,event_id,created_at FROM athlete_documents WHERE athlete_id=$1"),
+    documentVersions: await q("SELECT v.document_id,v.version,v.file_name,v.media_type,v.sha256,v.created_at FROM document_versions v JOIN athlete_documents d ON d.id=v.document_id WHERE d.athlete_id=$1"),
+    signingEvidence: await q("SELECT envelope_id,document_sha256,field_values,consent_version,signed_at FROM signing_evidence WHERE user_id=$1"),
+    operationalTasks: await q("SELECT id,title,due_at,status,event_id,deal_id,stop_id FROM operational_tasks WHERE athlete_id=$1"),
+    operationalExpenses: await q("SELECT id,description,amount_cents,currency,status,event_id,stop_id FROM operational_expenses WHERE athlete_id=$1"),
+    travelRoutes: await q("SELECT id,name,created_at FROM travel_routes WHERE athlete_id=$1"),
+    travelStops: await q("SELECT s.* FROM travel_stops s JOIN travel_routes r ON r.id=s.route_id WHERE r.athlete_id=$1"),
+    scoutingReportsAuthored: await q("SELECT * FROM scouting_reports WHERE author_id=$1"),
     recruitingBoard: await q("SELECT athlete_id, stage, updated_at FROM recruiting_board WHERE recruiter_id=$1"),
   };
   return new Response(JSON.stringify(data, null, 2), {

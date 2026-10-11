@@ -1,16 +1,14 @@
+import { B, LOG, browserOptions, sql, dbErr, mk, submitAndWait } from "./runtime.mjs";
 import { chromium } from "playwright";
 import { readFileSync } from "node:fs";
-import { execSync } from "node:child_process";
-const B = "http://localhost:3113";
-const br = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium" });
+const br = await chromium.launch(browserOptions);
 let fails = 0, total = 0;
 const rec = (ok, k, extra = "") => { total++; if (!ok) fails++; console.log((ok ? "PASS " : "FAIL ") + k.padEnd(66) + (ok ? "" : String(extra).slice(0, 170))); };
-const sql = (q) => execSync(`su postgres -c "psql lin -At -q"`, { input: q }).toString().trim();
 const settle = async (p) => { await p.waitForLoadState("networkidle"); await p.waitForTimeout(1500); await p.waitForLoadState("networkidle"); };
 const text = async (p) => (await p.locator("main, .center").first().innerText().catch(() => "")).replace(/\s+/g, " ");
 async function see(p, re, k) { re = new RegExp(re.source, "i"); let t = ""; for (let i = 0; i < 40; i++) { t = await text(p); if (re.test(t)) return rec(true, k); await p.waitForTimeout(500); } rec(false, k, `got=${t}`); }
-const START = readFileSync("/tmp/claude-0/mail.log", "utf8").length;
-const mails = () => readFileSync("/tmp/claude-0/mail.log", "utf8").slice(START).split("[mail:dev]").filter((m) => m.includes(" to="));
+const START = readFileSync(LOG, "utf8").length;
+const mails = () => readFileSync(LOG, "utf8").slice(START).split("[mail:dev]").filter((m) => m.includes(" to="));
 const mailsTo = (to, subj) => mails().filter((m) => m.includes(`to=${to} subject=${subj}`));
 const newCtx = () => br.newContext();
 const OLD = "longenoughpw1";
@@ -27,10 +25,10 @@ async function signup(f) {
   await p.fill("[name=name]", f.name); await p.fill("[name=email]", f.email); await p.fill("[name=password]", OLD);
   await p.check(`[name=role][value=${f.role}]`);
   for (const k of ["sport", "position", "birth_date", "guardian_email", "credential_type"]) if (f[k]) await p.fill(`[name=${k}]`, f[k]);
-  await p.click("button[type=submit]"); await settle(p); return p;
+  await submitAndWait(p, "button[type=submit]"); await settle(p); return p;
 }
 async function made(f) { const p = await signup(f); sql(`update users set email_verified_at=now() where email='${f.email}'`); await p.goto(B + "/dashboard"); await settle(p); return p; }
-async function login(p, email, pw) { await p.goto(B + "/login"); await p.fill("[name=email]", email); await p.fill("[name=password]", pw); await p.click("button[type=submit]"); await settle(p); }
+async function login(p, email, pw) { await p.goto(B + "/login"); await p.fill("[name=email]", email); await p.fill("[name=password]", pw); await submitAndWait(p, "button[type=submit]"); await settle(p); }
 const open = async (p, path = "/dashboard/settings") => { await p.goto(B + path); await settle(p); };
 const backdate = () => sql("update email_tokens set created_at = now() - interval '3 minutes' where purpose='change_email'");
 
@@ -181,7 +179,7 @@ sql("update deals set status='declined' where title='Open deal'");
 
 // trainer deletion: prescriptions stay, attribution cleared
 await del(tina, OLD, "DELETE"); for (let i = 0; i < 20 && sql(`select deleted_at is null from users where id='${tid}'`) === "t"; i++) await new Promise((r) => setTimeout(r, 500));
-rec(sql(`select deleted_at is not null from users where id='${tid}'`) === "true", "trainer account deleted");
+rec(sql(`select deleted_at is not null from users where id='${tid}'`) === "t", "trainer account deleted");
 rec(sql("select (select count(*) from nutrition_plans where prescribed_by is null)||':'||(select count(*) from athlete_workouts where prescribed_by is null)") === "1:1", "athlete keeps the plan and workout; prescriber link cleared");
 rec(sql(`select count(*) from athlete_relationships where member_id='${tid}'`) === "0" && sql(`select count(*) from manager_declarations where manager_id='${tid}'`) === "0", "trainer's relationships and declaration removed");
 
@@ -189,7 +187,7 @@ rec(sql(`select count(*) from athlete_relationships where member_id='${tid}'`) =
 const jdev = await newCtx().then((c) => c.newPage()); await login(jdev, "jordan@x.com", OLD);
 await del(jordan, OLD, "DELETE");
 await see(jordan, /Your account has been deleted/, "deleted athlete lands on login with confirmation");
-const u = sql(`select email like 'deleted-%@deleted.invalid' ||':'|| full_name ||':'|| (deleted_at is not null) ||':'|| (email_verified_at is null) from users where id='${jid}'`);
+const u = sql(`select (email like 'deleted-%@deleted.invalid')::text ||':'|| full_name ||':'|| (deleted_at is not null) ||':'|| (email_verified_at is null) from users where id='${jid}'`);
 rec(u === "true:Deleted user:true:true", "user row anonymized and flagged", u);
 rec(sql(`select (select count(*) from sessions where user_id='${jid}')+(select count(*) from athlete_profiles where user_id='${jid}')+(select count(*) from academic_logs where athlete_id='${jid}')+(select count(*) from study_sessions where athlete_id='${jid}')+(select count(*) from food_logs where athlete_id='${jid}')+(select count(*) from nutrition_plans where athlete_id='${jid}')+(select count(*) from athlete_workouts where athlete_id='${jid}')+(select count(*) from athlete_relationships where athlete_id='${jid}' or member_id='${jid}')`) === "0", "all personal data and sessions purged");
 rec(sql(`select count(*) from deals where athlete_id='${jid}'`) === "2", "deal records retained for the counterparty");

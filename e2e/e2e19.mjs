@@ -1,0 +1,53 @@
+import { chromium } from 'playwright';
+import { PDFDocument } from 'pdf-lib';
+import { createHash } from 'node:crypto';
+import assert from 'node:assert/strict';
+import { B,sql,browserOptions,submitAndWait } from './runtime.mjs';
+let checks=0;
+function ok(value,label){assert.ok(value,label);checks++;console.log('PASS '+label);}
+const q=s=>"'"+s.replaceAll("'","''")+"'";
+sql('TRUNCATE users CASCADE');
+function fixture(name,role){return sql(`INSERT INTO users(email,full_name,role,password_hash,email_verified_at) VALUES(${q(name.toLowerCase()+'@example.test')},${q(name)},${q(role)},'fixture',now()) RETURNING id`);}
+const athlete=fixture('Athlete','athlete'),guardian=fixture('Guardian','parent'),stranger=fixture('Stranger','coach');
+sql(`INSERT INTO athlete_profiles(user_id,sport,level,birth_date) VALUES('${athlete}','Soccer','high_school',CURRENT_DATE-INTERVAL '16 years')`);
+sql(`INSERT INTO athlete_relationships(athlete_id,member_id,relationship,guardian_approved) VALUES('${athlete}','${guardian}','parent',true)`);
+const br=await chromium.launch(browserOptions);
+const errors=[];
+async function pageFor(id,pending=false){const ctx=await br.newContext();const token='test-'+id+(pending?'-pending':'');const hash=createHash('sha256').update(token).digest('hex');sql(`INSERT INTO sessions(token_hash,user_id,expires_at,mfa_verified_at) VALUES('${hash}','${id}',now()+INTERVAL '1 day',${pending?'NULL':'now()'})`);await ctx.addCookies([{name:'lin_session',value:token,url:B,httpOnly:true,sameSite:'Lax'}]);const p=await ctx.newPage();p.setDefaultTimeout(60000);p.on('pageerror',e=>errors.push(e.message));return p;}
+const a=await pageFor(athlete),g=await pageFor(guardian),x=await pageFor(stranger);
+const openDetails=async(p,text)=>{const summary=p.getByText(text,{exact:true}).first();if(!await summary.locator('..').getAttribute('open').then(v=>v!==null))await summary.click();};
+const goto=async(p,path)=>p.goto(B+path,{waitUntil:'domcontentloaded',timeout:90000});
+try {
+ await goto(g,`/dashboard/operations/${athlete}`);ok(await g.getByRole('navigation',{name:'Athlete sections'}).locator('a').count()===8,'athlete record exposes all eight sections');
+ ok((await goto(x,`/dashboard/operations/${athlete}`)).status()===404,'unrelated account cannot open athlete record');
+ await goto(g,`/dashboard/documents?athlete=${athlete}`);await g.getByText('Upload document',{exact:true}).first().click();
+ await g.locator('input[name=title]').fill('Travel agreement');await g.locator('details select[name=category]').selectOption('contracts');
+ const pdf=await PDFDocument.create();pdf.addPage();const bytes=await pdf.save();
+ await g.locator('input[type=file]').setInputFiles({name:'agreement.pdf',mimeType:'application/pdf',buffer:Buffer.from(bytes)});
+ await submitAndWait(g,g.getByRole('button',{name:'Upload document',exact:true}));await g.getByRole('heading',{name:'Travel agreement'}).waitFor();
+ const doc=new URL(g.url()).pathname.split('/').pop();ok(!!doc,'document upload creates a record');
+ ok((await x.request.get(`${B}/dashboard/documents/${doc}/download`)).status()===404,'document bytes are denied to unrelated users');
+ ok((await g.request.get(`${B}/dashboard/documents/${doc}/download`)).headers()['cache-control']==='private, no-store','private document downloads cannot be cached');
+ await submitAndWait(g,g.getByRole('button',{name:'Prepare in Forg3'}));await g.getByRole('heading',{name:'Review the agreement'}).waitFor();const envelope=new URL(g.url()).pathname.split('/').pop();
+ for(const [id,capacity,order] of [[athlete,'athlete','1'],[guardian,'guardian','2']]){
+  await openDetails(g,'Add recipient');const f=g.locator('form').filter({has:g.locator('[name=action][value=recipient]')});await f.locator('[name=user_id]').selectOption(id);await f.locator('[name=capacity]').selectOption(capacity);await f.locator('[name=order]').fill(order);await submitAndWait(g,f.getByRole('button',{name:'Add recipient'}));
+ }
+ const recipients=sql(`SELECT id FROM signing_recipients WHERE envelope_id='${envelope}' ORDER BY signing_order`).split('\n');
+ for(const [i,id] of recipients.entries()){
+  await openDetails(g,'Add signing field');const f=g.locator('form').filter({has:g.locator('[name=action][value=field]')});await f.locator('[name=recipient_id]').selectOption(id);await f.locator('[name=label]').fill('Full name');await f.locator('[name=y]').fill(String(30+i*20));await submitAndWait(g,f.getByRole('button',{name:'Add field'}));
+ }
+ await submitAndWait(g,g.getByRole('button',{name:'Send for signature'}));ok(sql(`SELECT status FROM signing_envelopes WHERE id='${envelope}'`)==='sent','configured agreement can be sent');
+ // Fixtures simulate an already completed MFA challenge; actual enrollment is covered by e2e17/18.
+ for(const id of [athlete,guardian])sql(`INSERT INTO user_mfa(user_id,secret_sealed,enabled_at) VALUES('${id}','fixture-sealed-not-used',now())`);
+ const half=await pageFor(athlete,true);ok((await half.request.get(`${B}/dashboard/signing/${envelope}/download`)).status()===401,'MFA-pending session cannot download the agreement');await half.context().close();
+ for(const [p,name] of [[a,'Athlete'],[g,'Guardian']]){
+  await goto(p,`/dashboard/signing/${envelope}`);await submitAndWait(p,p.getByRole('button',{name:'Begin signing'}));await p.getByRole('heading',{name:'Complete your fields'}).waitFor();await p.locator('input[name^=field_]').fill(name);await p.locator('[name=consent]').check();await submitAndWait(p,p.getByRole('button',{name:'Sign agreement',exact:true}));
+ }
+ ok(sql(`SELECT status FROM signing_envelopes WHERE id='${envelope}'`)==='completed','ordered signing completes through the browser');
+ const completed=await g.request.get(`${B}/dashboard/signing/${envelope}/download?kind=completed`);ok(completed.status()===200&&(await completed.body()).subarray(0,5).toString()==='%PDF-','completed PDF is downloadable');
+ ok((await g.request.get(`${B}/dashboard/signing/${envelope}/download?kind=certificate`)).status()===200,'audit certificate is downloadable');
+ await goto(g,`/dashboard/schedule?athlete=${athlete}`);await g.getByText('Add event',{exact:true}).click();await g.locator('input[name=name]').first().fill('Saturday game');await g.locator('[name=starts_at]').fill('2027-01-10T15:00');await g.locator('[name=ends_at]').fill('2027-01-10T17:00');await submitAndWait(g,g.getByRole('button',{name:'Save event'}));ok(await g.getByRole('cell',{name:'Saturday game'}).count()===1,'game appears on athlete schedule');
+ await goto(g,`/dashboard/routes?athlete=${athlete}`);await g.locator('input[name=name]').fill('Winter showcase trip');await submitAndWait(g,g.getByRole('button',{name:'Create route'}));ok(await g.getByRole('heading',{name:'Winter showcase trip'}).count()===1,'route is a persistent athlete record');
+ await g.setViewportSize({width:390,height:844});await goto(g,`/dashboard/operations/${athlete}`);await g.screenshot({path:'.test-output/athlete-mobile.png',fullPage:true});ok(await g.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),'athlete record fits a mobile viewport');
+ ok(errors.length===0,'no browser runtime errors: '+errors.join('; '));console.log(`ALL PASSED (${checks} checks)`);
+} finally {await br.close();}

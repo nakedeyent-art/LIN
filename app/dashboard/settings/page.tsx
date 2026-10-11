@@ -83,6 +83,7 @@ export default async function Settings({ searchParams }: { searchParams: Promise
         </Card>
 
         <Card title="Two-factor authentication" wide>
+          <p className="muted">Approving agreements, signing contracts and handling payments require two-factor authentication and a code verified within the last 10 minutes.</p>
           {mfaOn ? (
             <>
               <p><Badge tone="green">On</Badge> Signing in asks for a code from your authenticator app.{" "}
@@ -92,11 +93,11 @@ export default async function Settings({ searchParams }: { searchParams: Promise
               {s.isAdmin ? <p className="muted">Two-factor is required for admin accounts, so it can&apos;t be turned off.</p> : (
                 <details style={{ marginTop: 8 }}><summary>Turn off two-factor</summary>
                   <form action={disableMyMfa} style={stack}>
-                    <input name="code" placeholder="Code from your app, or a recovery code" autoComplete="one-time-code" required />
-                    <input type="password" name="password" placeholder="Your password" autoComplete="current-password" required />
+                    <label>Authenticator or recovery code<input name="code" placeholder="Code from your app, or a recovery code" autoComplete="one-time-code" required /></label>
+                    <label>Your password<input type="password" name="password" placeholder="Your password" autoComplete="current-password" required /></label>
                     <button className="btn ghost" type="submit">Turn off</button>
                   </form></details>)}
-              <p className="muted">Lost your phone and your recovery codes? Contact LIN support: after checking it&apos;s you, they can remove it so you can set it up again.</p>
+              <p className="muted">Lost your phone and your recovery codes? Contact LIN support. After checking your identity, they can reset it; you must set it up again before accessing your account.</p>
             </>
           ) : (
             <>

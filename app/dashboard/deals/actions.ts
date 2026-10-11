@@ -1,7 +1,7 @@
 "use server";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
-import { requireAccess, requireUser } from "@/lib/session";
+import { requireAccess, requireRecentMfa, requireUser } from "@/lib/session";
 import {
   ALL_ACTIONS, applyAction, canOffer, type DealAction, type DealStatus, type Level, MAX_OPEN_OFFERS_PER_PAIR,
   OFFER_TTL_DAYS, OPEN_STATUSES, amountError, parseDollarsToCents, sideOf, sqlIn,
@@ -9,6 +9,7 @@ import {
 import { createContractForDeal, voidContract } from "@/lib/contractdb";
 import { notifyDealParties, refundPayment, releasePayment } from "@/lib/payments";
 import { pairBlocked } from "@/lib/blocksdb";
+import { screenText } from "@/lib/content-filter";
 import { paymentsEnabled, stripe } from "@/lib/stripe";
 import { capacityOn, dealContext, hasLinkedGuardian, notifyDeal, type DealRow } from "@/lib/dealsdb";
 
@@ -40,16 +41,22 @@ export async function createOffer(formData: FormData) {
   if (await pairBlocked(athleteId, s.userId)) back("This athlete isn't available for offers.");   // never says why
   const ok = canOffer(s.role, a.level as Level);
   if (!ok.ok) back(ok.error);
-
-  const open = (await db().query(
-    `SELECT count(*)::int AS n FROM deals WHERE athlete_id=$1 AND counterparty_id=$2 AND status IN ${sqlIn(OPEN_STATUSES)}`,
-    [athleteId, s.userId])).rows[0].n;
-  if (open >= MAX_OPEN_OFFERS_PER_PAIR) back(`You already have ${MAX_OPEN_OFFERS_PER_PAIR} open offers to this athlete.`);
+  // Offers are visible to the athlete too; the message safety boundary also applies to their terms.
+  const screened = screenText(`${title}\n${deliverables}`, { minorThread: a.minor, paymentsOn: paymentsEnabled() });
+  if (!screened.ok) back(screened.error.replace("message", "offer").replace("conversation", "offer"));
 
   const client = await db().connect();
   let id: string;
   try {
     await client.query("BEGIN");
+    await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [`offer:${athleteId}:${s.userId}`]);
+    const open = (await client.query(
+      `SELECT count(*)::int AS n FROM deals WHERE athlete_id=$1 AND counterparty_id=$2 AND status IN ${sqlIn(OPEN_STATUSES)}`,
+      [athleteId, s.userId])).rows[0].n;
+    if (open >= MAX_OPEN_OFFERS_PER_PAIR) {
+      await client.query("ROLLBACK");
+      back(`You already have ${MAX_OPEN_OFFERS_PER_PAIR} open offers to this athlete.`);
+    }
     id = (await client.query(
       `INSERT INTO deals(athlete_id, counterparty_id, title, amount_cents, deliverables, status, attested_at, expires_at)
        VALUES ($1,$2,$3,$4,$5,'offered',NOW(), NOW() + make_interval(days => $6)) RETURNING id`,
@@ -67,6 +74,7 @@ export async function dealAction(formData: FormData) {
   const action = str(formData, "action") as DealAction;
   const back = (msg: string, key = "error"): never => redirect(`/dashboard/deals/${dealId}?${key}=${encodeURIComponent(msg)}`);
   if (!ALL_ACTIONS.includes(action) || !/^[0-9a-f-]{36}$/i.test(dealId)) redirect("/dashboard/deals");
+  if (["approve", "complete", "request_cancel", "agree_cancel"].includes(action)) await requireRecentMfa(s, `/dashboard/deals/${dealId}`);
 
   const client = await db().connect();
   let newStatus: DealStatus, oldStatus: DealStatus;

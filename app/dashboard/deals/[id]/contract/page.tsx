@@ -1,3 +1,5 @@
+import { db } from "@/lib/db";
+import { generateDealAgreement } from "@/app/dashboard/signing/actions";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -21,6 +23,7 @@ export default async function ContractPage({ params, searchParams }: { params: P
   const who = await capacityOn(s.userId, d);
   const k = await getContract(id);
   if (!who || !k) notFound();
+  const envelope = (await db().query("SELECT id FROM signing_envelopes WHERE legacy_contract_id=$1", [k.id])).rows[0];
   const ctx = await dealContext(d);
   const mine = k.signatures.find((x) => x.userId === s.userId);
   const check = canSign({ who, athleteIsMinor: ctx.athleteIsMinor, status: d.status, expired: ctx.expired, voided: !!k.voidedAt, alreadySigned: !!mine });
@@ -34,6 +37,7 @@ export default async function ContractPage({ params, searchParams }: { params: P
       <div className="tag"><Link href={`/dashboard/deals/${id}`} style={{ textDecoration: "underline" }}>← {d.title}</Link> · template {k.templateVersion} · <a href={`/dashboard/deals/${id}/contract/download`} style={{ textDecoration: "underline" }}>Download (.txt)</a></div>
       {q.msg && <p className="ok">{q.msg}</p>}
       {q.error && <p role="alert" className="error">{q.error}</p>}
+      {envelope ? <p><Link className="btn" href={`/dashboard/signing/${envelope.id}`}>Open Forg3 signing workspace</Link></p> : !k.executedAt && !k.voidedAt && k.signatures.length===0 && <form action={generateDealAgreement}><input type="hidden" name="deal_id" value={id}/><button className="btn" type="submit">Review and sign with Forg3</button></form>}
       <pre className="contract">{k.body}</pre>
       <div className="card" style={{ marginTop: 16 }}>
         <h3>Signatures</h3>
@@ -44,9 +48,10 @@ export default async function ContractPage({ params, searchParams }: { params: P
         </tbody></table>
         {ex.executed && <p className="ok">Both required parties have signed. Keep a copy: use Download or your browser&apos;s Print → Save as PDF.</p>}
       </div>
-      {check.ok && (
+      {check.ok && !envelope && k.signatures.length>0 && (
         <form action={signContract} className="card" style={{ marginTop: 16, display: "grid", gap: 10, maxWidth: 560 }}>
           <h3>Sign as {ROLE[check.role]}</h3>
+          <p className="muted">Signing requires two-factor authentication verified within the last 10 minutes. If a check is needed, you will return here to review and sign.</p>
           <input type="hidden" name="deal_id" value={id} />
           <label>Type your full name to sign <input type="text" name="typed_name" placeholder="Your full legal name" autoComplete="name" required /></label>
           <label style={{ display: "flex", gap: 8 }}><input type="checkbox" name="consent" /> <span>{ESIGN_CONSENT_TEXT}</span></label>
