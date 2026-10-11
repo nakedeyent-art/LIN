@@ -29,3 +29,10 @@ export async function mfaEnrollAt(page, B, pw = "longenoughpw1") {
   await page.click("a:text-is('Continue')"); await page.waitForLoadState("networkidle");
   return secret;
 }
+
+/** Makes the session's second factor fresh again (sensitive actions need one within 10 minutes); a no-op when it already is. */
+export async function mfaRefresh(page, B, secret) {
+  await page.goto(B + "/mfa/verify?sensitive=1&next=%2Fdashboard"); await page.waitForLoadState("domcontentloaded");
+  if (!/\/mfa\/verify/.test(page.url())) return;
+  await page.fill("input[name=code]", code(secret)); await page.click("button:text-is('Verify')"); await page.waitForLoadState("networkidle");
+}

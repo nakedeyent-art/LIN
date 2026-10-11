@@ -4,7 +4,7 @@ import { chromium } from "playwright";
 import { readFileSync } from "node:fs";
 import { execSync, spawnSync } from "node:child_process";
 import { createHmac } from "node:crypto";
-import { mfaEnrollAt } from "./mfa-helper.mjs";
+import { mfaEnrollAt, mfaRefresh } from "./mfa-helper.mjs";
 const B = _rt.B, M = "http://localhost:4010", WH = "whsec_test_mock_secret_0123456789", CRON = "test-cron-secret-0123456789abcdef";
 const br = await chromium.launch(_rt.browserOptions);
 let fails = 0, total = 0;
@@ -76,7 +76,7 @@ rec(sql(`select expires_at > now() + interval '13 days' from deals where id='${A
 // signing rules
 await open(sam, `/dashboard/deals/${A}`); await notSee(sam, /Fund this deal/, "can't fund before the agreement is signed");
 // Signing goes through Forg3 (generated from the frozen contract); recipients sign in order — sponsor, then athlete — and each needs a recent second factor.
-await mfaEnrollAt(ada, B, OLD); await mfaEnrollAt(sam, B, OLD);
+const adaSecret = await mfaEnrollAt(ada, B, OLD), samSecret = await mfaEnrollAt(sam, B, OLD); void adaSecret;
 await signAs(sam, A, "Sam Sponsor");
 rec(dstate(A) === "awaiting_signature", "one signature doesn't make the deal active");
 rec(sql(`select count(*) from signing_recipients r join signing_envelopes e on e.id=r.envelope_id where e.deal_id='${A}' and r.status='signed'`) === "1", "the sponsor's signature is recorded on the envelope");
@@ -149,7 +149,7 @@ rec(mailsTo("ada@x.com", "Your NIL payment was released").length === 1 && !mails
 // agreement download
 const dl = await ada.context().request.get(`${B}/dashboard/deals/${A}/contract/download`);
 const dlText = await dl.text();
-rec(dl.status() === 200 && /attachment/.test(dl.headers()["content-disposition"]) && dlText.includes("NAME, IMAGE AND LIKENESS") && dlText.includes("ada ADULT") && dlText.includes("FULLY EXECUTED"), "agreement downloads with signatures and execution stamp");
+rec(dl.status() === 200 && /attachment/.test(dl.headers()["content-disposition"]) && dlText.includes("NAME, IMAGE AND LIKENESS") && dlText.includes("Ada Adult") && dlText.includes("FULLY EXECUTED"), "agreement downloads with signatures and execution stamp");
 rec((await (await newPage()).context().request.get(`${B}/dashboard/deals/${A}/contract/download`)).status() === 401, "download refuses anonymous requests");
 rec((await eve.context().request.get(`${B}/dashboard/deals/${A}/contract/download`)).status() === 404, "download 404s for outsiders");
 
@@ -175,24 +175,28 @@ const refunds = async () => (await mock("/_admin/state")).refunds;
 const Bd = mkDeal("jordan@x.com", "Hoops camp", 100000);
 await open(jordan, `/dashboard/deals/${Bd}`); await click(jordan, "Accept");
 rec(dstate(Bd) === "guardian_review", "minor's acceptance waits for a guardian");
+const mariaSecret = await mfaEnrollAt(maria, B, OLD); void mariaSecret;
 await open(maria, `/dashboard/deals/${Bd}`); await click(maria, "Approve (guardian)");
 rec(dstate(Bd) === "awaiting_signature", "guardian approval moves it to signing (not active)");
 rec(sql(`select payee_user_id='${id("maria@x.com")}' from deals where id='${Bd}'`) === "t", "the approving guardian becomes the payee");
 const bBody = sql(`select body from contracts where deal_id='${Bd}'`);
 rec(/Athlete: Jordan Reyes, a minor\./.test(bBody) && /6\. MINOR ATHLETE/.test(bBody) && /Parent\/Legal Guardian/.test(bBody), "minor's contract names the minor in full and adds the guardian clause");
-await open(jordan, `/dashboard/deals/${Bd}/contract`); await see(jordan, /A minor can't sign/, "the minor can't sign");
+await open(jordan, `/dashboard/deals/${Bd}/contract`); await jordan.locator("main button:has-text('Review and sign with Forg3')").click(); await settle(jordan); await see(jordan, /guardian must start the agreement/, "the minor can't start or sign the agreement");
 rec((await jordan.locator("main [name=typed_name]").count()) === 0, "no signing form for the minor");
 rec((await eve.goto(`${B}/dashboard/deals/${Bd}/contract`)).status() === 404, "an unrelated parent can't see the minor's agreement");
-await signAs(dan, Bd, "Dan Reyes");   // ANY current guardian may sign for the minor
-rec(sql(`select signer_role from contract_signatures where signer_user_id='${id("dan@x.com")}'`) === "guardian", "a (second) guardian signs on the minor's behalf");
-rec(dstate(Bd) === "awaiting_signature", "guardian signature alone doesn't activate");
-await signAs(sam, Bd, "Sam Sponsor"); rec(dstate(Bd) === "active", "sponsor + guardian signatures → active");
+// Forg3 addresses the agreement to the sponsor and the approving guardian, in that order.
+await mfaRefresh(sam, B, samSecret); await signAs(sam, Bd, "Sam Sponsor");
+rec(dstate(Bd) === "awaiting_signature", "sponsor signature alone doesn't activate");
+await signAs(maria, Bd, "Maria Reyes");
+rec(sql(`select signer_role from contract_signatures where signer_user_id='${id("maria@x.com")}'`) === "guardian", "the approving guardian signs on the minor's behalf");
+rec(dstate(Bd) === "active", "sponsor + guardian signatures → active");
 await open(sam, `/dashboard/deals/${Bd}`); rec((await sam.locator("main button:has-text('Fund this deal')").count()) === 0, "no funding while the payee has no payout account");
+await mfaEnrollAt(dan, B, OLD);
 await open(dan, `/dashboard/deals/${Bd}`); await click(dan, "Receive this payment myself");
 rec(sql(`select payee_user_id='${id("dan@x.com")}' from deals where id='${Bd}'`) === "t", "a current guardian can take over as payee");
 await open(eve, `/dashboard/deals/${Bd}`); rec((await eve.goto(`${B}/dashboard/deals/${Bd}`)).status() === 404, "outsiders can't see the deal or its payment");
 await setupPayouts(dan, "dan@x.com");
-await open(sam, `/dashboard/deals/${Bd}`); await sam.locator("main button:has-text('Fund this deal')").click(); await sam.waitForURL(/localhost:4010/, { timeout: 30000 }).catch(() => {});
+await mfaRefresh(sam, B, samSecret); await open(sam, `/dashboard/deals/${Bd}`); await sam.locator("main button:has-text('Fund this deal')").click(); await sam.waitForURL(/localhost:4010/, { timeout: 30000 }).catch(() => {});
 const bSid = sql(`select stripe_checkout_session_id from deal_payments where deal_id='${Bd}'`);
 await mock(`/_admin/pay/${bSid}`, "POST");   // paid on Stripe, but NO webhook is sent
 rec(pstate(Bd) === "pending_checkout", "(setup) paid on Stripe, webhook not delivered");
