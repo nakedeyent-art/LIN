@@ -77,6 +77,16 @@ try {
  await submitAndWait(g,row().getByRole('button',{name:'Cancel this event'}));
  await row().getByText('Cancelled').first().waitFor({timeout:15000});ok(await row().getByRole('button',{name:'Cancel this event'}).count()===0,'a cancelled event is marked and can no longer be edited');
  await goto(g,`/dashboard/routes?athlete=${athlete}`);await g.locator('input[name=name]').fill('Winter showcase trip');await submitAndWait(g,g.getByRole('button',{name:'Create route'}));ok(await g.getByRole('heading',{name:'Winter showcase trip'}).count()===1,'route is a persistent athlete record');
+ const routeId=sql(`SELECT id FROM travel_routes WHERE name='Winter showcase trip'`);await goto(g,`/dashboard/routes/${routeId}`);
+ await g.locator('input[name=name]').fill('Airport');await g.locator('[name=departure_at]').fill('2027-01-09T08:00');await g.locator('[name=arrival_at]').fill('2027-01-09T10:00');await submitAndWait(g,g.getByRole('button',{name:'Save stop'}));
+ await g.getByText(/Stop 1: Airport/).first().waitFor({timeout:15000});ok(true,'a stop is added to the route');
+ const stopBox=g.locator('details',{hasText:'Stop 1: Airport'});
+ await stopBox.locator('form:has(button:text-is("Add contact")) [name=name]').fill('Dana Host');await stopBox.locator('form:has(button:text-is("Add contact")) [name=role]').fill('Host family');await submitAndWait(g,stopBox.getByRole('button',{name:'Add contact'}));
+ await g.locator('details',{hasText:'Stop 1: Airport'}).getByText(/Dana Host · Host family/).waitFor({timeout:15000});ok(true,'a contact is attached to the stop');
+ await submitAndWait(g,g.locator('details',{hasText:'Stop 1: Airport'}).getByRole('button',{name:'Attach',exact:true}));
+ await g.locator('details',{hasText:'Stop 1: Airport'}).getByRole('link',{name:'Travel agreement'}).waitFor({timeout:15000});ok(true,'a document is attached to the stop');
+ const taskForm=g.locator('details',{hasText:'Stop 1: Airport'}).locator('form:has(button:text-is("Add task"))');await taskForm.locator('[name=title]').fill('Print boarding passes');await taskForm.locator('[name=due_at]').fill('2027-01-08T18:00');await submitAndWait(g,taskForm.getByRole('button',{name:'Add task'}));
+ await goto(g,`/dashboard/routes/${routeId}`);await g.locator('details',{hasText:'Stop 1: Airport'}).getByText(/Print boarding passes/).waitFor({timeout:15000});ok(sql(`SELECT count(*) FROM operational_tasks WHERE stop_id IS NOT NULL AND title='Print boarding passes'`)==='1','a task is linked to the stop');
  await g.setViewportSize({width:390,height:844});await goto(g,`/dashboard/operations/${athlete}`);await g.screenshot({path:'.test-output/athlete-mobile.png',fullPage:true});ok(await g.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),'athlete record fits a mobile viewport');
  ok(errors.length===0,'no browser runtime errors: '+errors.join('; '));console.log(`ALL PASSED (${checks} checks)`);
 } finally {await br.close();}
