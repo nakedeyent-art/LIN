@@ -30,8 +30,8 @@ export default async function Organizations({ searchParams }: { searchParams: Pr
               {members.map((m) => (
                 <tr key={m.user_id}><td>{m.full_name}{m.user_id === s.userId ? " (you)" : ""}</td><td>{m.role}</td><td>
                   {o.role === "owner" && m.role === "member" && <>
-                    <form action={setOrganizationRole} style={{ display: "inline" }}>{hidden(o, { user_id: m.user_id, role: "owner" })}<button className="btn ghost">Make owner</button></form>{" "}
-                    <form action={removeOrganizationMember} style={{ display: "inline" }}>{hidden(o, { user_id: m.user_id })}<button className="btn ghost">Remove</button></form></>}
+                    <form action={setOrganizationRole} style={{ display: "inline" }}>{hidden(o, { user_id: m.user_id, role: "owner" })}<button className="btn ghost" aria-label={`Make ${m.full_name} an owner`}>Make owner</button></form>{" "}
+                    <form action={removeOrganizationMember} style={{ display: "inline" }}>{hidden(o, { user_id: m.user_id })}<button className="btn ghost" aria-label={`Remove ${m.full_name} from ${o.name}`}>Remove</button></form></>}
                   {o.role === "owner" && m.role === "owner" && m.user_id === s.userId && owners > 1 &&
                     <form action={setOrganizationRole} style={{ display: "inline" }}>{hidden(o, { user_id: m.user_id, role: "member" })}<button className="btn ghost">Step down to member</button></form>}
                   {o.role === "owner" && m.role === "owner" && m.user_id !== s.userId && owners > 1 &&

@@ -90,3 +90,17 @@ describe('scouting watch covers the whole board over successive runs', () => {
     } finally { await db().query('ALTER TABLE scouting_watch_state DROP CONSTRAINT boom'); }
   });
 });
+
+describe('signing notices', () => {
+  it('a second signature and the completion are not swallowed by same-day dedupe, but a retry still is', async () => {
+    const { deliverSigningNotices } = await import('../lib/signing');
+    await envelopes(1, 0);
+    const id = (await db().query('SELECT id FROM signing_envelopes LIMIT 1')).rows[0].id;
+    await deliverSigningNotices(id, 'progress', '1');
+    await deliverSigningNotices(id, 'progress', '1');           // retry: deduplicated
+    await deliverSigningNotices(id, 'progress', '2');
+    await deliverSigningNotices(id, 'completed', '2');
+    expect(await n('SELECT count(*)::int AS n FROM signing_delivery_events WHERE envelope_id=$1', [id])).toBe(3);
+    expect(await n("SELECT count(*)::int AS n FROM notifications WHERE title LIKE 'Agreement completed'")).toBe(1);
+  });
+});

@@ -11,7 +11,7 @@ export async function addSportsEvent(form:FormData) {
  if(!validId(athlete)||!await familyAuthority(s.userId,athlete))redirect(`${back}&error=Access+denied`);
  if(!name||name.length>160||!EVENT_KINDS.some(k=>k===kind)||!Number.isFinite(Date.parse(start))||!Number.isFinite(Date.parse(end))||Date.parse(end)<=Date.parse(start))redirect(`${back}&error=Enter+a+name+and+valid+start+and+end+times`);
  const season=String(form.get('season_id')??'');
- const seasonRecord=validId(season)?(await db().query('SELECT * FROM sports_seasons WHERE id=$1 AND (created_by=$2 OR EXISTS(SELECT 1 FROM organization_members m WHERE m.organization_id=sports_seasons.organization_id AND m.user_id=$2))',[season,s.userId])).rows[0]:null;
+ const seasonRecord=validId(season)?(await db().query('SELECT * FROM sports_seasons WHERE id=$1 AND (created_by=$2 OR EXISTS(SELECT 1 FROM organization_members m JOIN organizations og ON og.id=m.organization_id AND og.archived_at IS NULL WHERE m.organization_id=sports_seasons.organization_id AND m.user_id=$2))',[season,s.userId])).rows[0]:null;
  if(season&&!seasonRecord)redirect(`${back}&error=Season+access+denied`);
  if(seasonRecord&&(start.slice(0,10)<new Date(seasonRecord.starts_on).toISOString().slice(0,10)||end.slice(0,10)>new Date(seasonRecord.ends_on).toISOString().slice(0,10)))redirect(`${back}&error=Event+dates+must+fall+inside+the+season`);
  const {canManageTeam}=await import('@/lib/access');

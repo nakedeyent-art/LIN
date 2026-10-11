@@ -17,7 +17,7 @@ export async function athleteSchedule(s:Session,athleteId:string) {
 export async function accessibleEvent(s:Session,id:string,c:Pick<PoolClient,'query'>=db()) {
  if(!validId(id))return null;
  const e=(await c.query(`SELECT e.*,d.starts_at,d.ends_at,d.kind,d.timezone,d.venue_id FROM events e JOIN sports_event_details d ON d.event_id=e.id WHERE e.id=$1 AND
- (e.organizer_id=$2 OR EXISTS(SELECT 1 FROM sports_attendees a WHERE a.event_id=e.id AND (a.athlete_id=$2 OR EXISTS(SELECT 1 FROM guardian_links g WHERE g.athlete_id=a.athlete_id AND g.member_id=$2))))`,[id,s.userId])).rows[0];
+ (EXISTS(SELECT 1 FROM sports_attendees a WHERE a.event_id=e.id AND (a.athlete_id=$2 OR EXISTS(SELECT 1 FROM guardian_links g WHERE g.athlete_id=a.athlete_id AND g.member_id=$2))))`,[id,s.userId])).rows[0];
  return e??null;
 }
 export async function athleteRoute(s:Session,id:string) {

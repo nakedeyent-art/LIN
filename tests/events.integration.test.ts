@@ -64,10 +64,10 @@ describe('editing an event', () => {
     expect((await updateEvent(guardian, ev, edit({ recruitingVisible: true }))).ok).toBe(true);
     expect((await row()).recruiting_visible).toBe(true);
     await db().query('UPDATE events SET organizer_id=$2 WHERE id=$1', [ev, stranger.userId]);
-    expect((await updateEvent(stranger, ev, edit({ recruitingVisible: true }))).ok).toBe(true);            // already shared: unchanged, not a new decision
-    expect((await updateEvent(stranger, ev, edit({ recruitingVisible: false }))).ok).toBe(true);           // anyone who can edit may WITHDRAW sharing
+    expect((await updateEvent(stranger, ev, edit({ recruitingVisible: false }))).ok).toBe(false);          // an organizer without family authority can no longer change anything
+    expect((await row()).recruiting_visible).toBe(true);
+    expect((await updateEvent(guardian, ev, edit({ recruitingVisible: false }))).ok).toBe(true);           // the family may always WITHDRAW sharing
     expect((await row()).recruiting_visible).toBe(false);
-    expect((await updateEvent(stranger, ev, edit({ recruitingVisible: true }))).ok).toBe(false);           // but an organizer without authority cannot turn it on
     await db().query('UPDATE events SET organizer_id=$2 WHERE id=$1', [ev, guardian.userId]);
     expect((await updateEvent(guardian, ev, edit({ recruitingVisible: true }))).ok).toBe(true);
     const other = await user('Other', 'athlete');
@@ -170,5 +170,16 @@ describe('events shared for scouting', () => {
     await cancelEvent(guardian, ev);
     expect(await sharedEvents(athlete.userId)).toEqual([]);
     expect(await sharedEvents('nope')).toEqual([]);
+  });
+});
+
+describe('organizer without family authority', () => {
+  it('loses control of the event once the guardian link ends', async () => {
+    expect((await updateEvent(guardian, ev, edit({ name: 'Before' }))).ok).toBe(true);
+    await db().query('DELETE FROM athlete_relationships WHERE member_id=$1', [guardian.userId]);
+    expect((await updateEvent(guardian, ev, edit({ name: 'After unlink' }))).ok).toBe(false);
+    expect((await cancelEvent(guardian, ev)).ok).toBe(false);
+    expect((await addAttendee(guardian, ev, athlete.userId)).ok).toBe(false);
+    expect((await row()).name).toBe('Before');
   });
 });

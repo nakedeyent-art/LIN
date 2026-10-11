@@ -1,6 +1,7 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { db } from "../lib/db";
 import { selectPayee } from "../lib/payee";
+import { releasePayment } from "../lib/payments";
 
 let athlete: string, sponsor: string, deal: string, payment: string;
 beforeEach(async () => {
@@ -45,5 +46,14 @@ describe("payment recipient changes", () => {
   it("rejects a minor acting without their guardian", async () => {
     await db().query("UPDATE athlete_profiles SET birth_date=CURRENT_DATE-INTERVAL '16 years' WHERE user_id=$1", [athlete]);
     expect(await selectPayee(athlete, deal)).toHaveProperty("ok", false);
+  });
+});
+
+describe("release during a dispute", () => {
+  it("is refused while a dispute is open and not because of a missing payment", async () => {
+    await db().query("INSERT INTO payment_events(payment_id,action,created_at) VALUES($1,'dispute_opened',now()-interval '1 hour')", [payment]);
+    expect(await releasePayment(payment)).toEqual({ ok: false, error: "payment is under dispute" });
+    await db().query("INSERT INTO payment_events(payment_id,action) VALUES($1,'dispute_closed')", [payment]);
+    expect((await releasePayment(payment)).error).not.toBe("payment is under dispute");
   });
 });

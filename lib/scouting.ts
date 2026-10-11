@@ -13,7 +13,7 @@ export async function visibleProspect(s:Session,id:string) {
 export async function privateReports(s:Session,athleteId?:string) {
  if(s.role!=='recruiter'||(athleteId&&!validId(athleteId)))return [];
  // Evaluations never enter shared athlete activity or document search.
- return (await db().query('SELECT r.*,u.full_name AS author_name FROM scouting_reports r JOIN users u ON u.id=r.author_id WHERE (r.author_id=$1 OR EXISTS(SELECT 1 FROM organization_members m WHERE m.organization_id=r.organization_id AND m.user_id=$1)) AND ($2::uuid IS NULL OR r.athlete_id=$2) ORDER BY r.created_at DESC LIMIT 200',[s.userId,athleteId??null])).rows;
+ return (await db().query('SELECT r.*,u.full_name AS author_name FROM scouting_reports r JOIN users u ON u.id=r.author_id WHERE (r.author_id=$1 OR EXISTS(SELECT 1 FROM organization_members m JOIN organizations og ON og.id=m.organization_id AND og.archived_at IS NULL WHERE m.organization_id=r.organization_id AND m.user_id=$1)) AND ($2::uuid IS NULL OR r.athlete_id=$2) ORDER BY r.created_at DESC LIMIT 200',[s.userId,athleteId??null])).rows;
 }
 /** Events an athlete's family chose to share with recruiters (not cancelled). Only these may be linked to an observation, and only name and date are ever shown. */
 export async function sharedEvents(athleteId:string) {

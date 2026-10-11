@@ -156,7 +156,9 @@ export async function signEnvelope(s:Session,id:string,token:string,values:Recor
   }
   await c.query('COMMIT');
  }catch(e){await c.query('ROLLBACK');throw e;}finally{c.release();}
- await deliverSigningNotices(id,'progress');
+ // Each step is its own notice: same-day dedupe must not swallow the second signature or the completion.
+ const after=(await db().query("SELECT status,(SELECT count(*) FROM signing_recipients WHERE envelope_id=$1 AND signed_at IS NOT NULL) AS signed FROM signing_envelopes WHERE id=$1",[id])).rows[0];
+ await deliverSigningNotices(id,after?.status==='completed'?'completed':'progress',String(after?.signed??''));
 }
 export async function closeEnvelope(s:Session,id:string,action:'declined'|'voided') {
  const c=await db().connect();
@@ -176,12 +178,12 @@ export async function closeEnvelope(s:Session,id:string,action:'declined'|'voide
  * Transactional delivery: the event, the in-app notification and the (generic) email all commit together, and retries deduplicate by day.
  * The email carries no document names, amounts or people — just a link behind login — and goes through the retrying outbox.
  */
-export async function deliverSigningNotices(id:string,kind:string) {
+export async function deliverSigningNotices(id:string,kind:string,variant='') {
  const c=await db().connect();
  try {await c.query('BEGIN');
   const recipients=(await c.query('SELECT r.id,r.user_id,u.email FROM signing_recipients r JOIN users u ON u.id=r.user_id WHERE r.envelope_id=$1 AND u.deleted_at IS NULL',[id])).rows;
   const label=kind==='reminder'?'needs your attention':kind;
-  for(const r of recipients){const event=await c.query('INSERT INTO signing_delivery_events(envelope_id,recipient_id,kind) VALUES($1,$2,$3) ON CONFLICT DO NOTHING RETURNING id',[id,r.id,kind]);
+  for(const r of recipients){const event=await c.query('INSERT INTO signing_delivery_events(envelope_id,recipient_id,kind) VALUES($1,$2,$3) ON CONFLICT DO NOTHING RETURNING id',[id,r.id,variant?`${kind}#${variant}`:kind]);
    if(!event.rowCount)continue;
    await c.query("INSERT INTO notifications(user_id,kind,title,href) VALUES($1,'account',$2,$3)",[r.user_id,`Agreement ${label}`,`/dashboard/signing/${id}`]);
    await enqueueMail(r.email,`An agreement ${label} on LIN`,`An agreement on LIN ${label==='needs your attention'?'still needs your attention':'has an update ('+label+')'}.\n\nLog in to review it: ${appUrl()}/dashboard/signing/${id}`,{dedupeKey:`signing:${event.rows[0].id}`,client:c});

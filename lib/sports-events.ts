@@ -29,12 +29,11 @@ async function audience(c: PoolClient, eventId: string) {
 }
 
 /**
- * Who may change an event: its organizer, or the family (the adult athlete or a current guardian) of someone attending it. The caller holds the event row lock.
+ * Who may change an event: the family (the adult athlete or a current guardian) of someone attending it. The caller holds the event row lock.
  */
 async function mayManage(c: PoolClient, userId: string, eventId: string): Promise<boolean> {
-  const e = (await c.query('SELECT organizer_id FROM events WHERE id=$1', [eventId])).rows[0];
-  if (!e) return false;
-  if (e.organizer_id === userId) return true;
+  if (!(await c.query('SELECT 1 FROM events WHERE id=$1', [eventId])).rowCount) return false;
+  // Being the organizer is not authority by itself: a former guardian, or a guardian whose athlete turned 18, loses control with the relationship.
   for (const a of (await c.query('SELECT athlete_id FROM sports_attendees WHERE event_id=$1', [eventId])).rows)
     if (await familyAuthority(userId, a.athlete_id, c)) return true;
   return false;

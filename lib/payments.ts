@@ -245,6 +245,9 @@ export async function releasePayment(paymentId: string): Promise<{ ok: boolean; 
     p = mapPayment(row);
     if (p.status === "released") { await client.query("COMMIT"); return { ok: true }; }
     if (p.status !== "funded" && p.status !== "releasing") { await client.query("ROLLBACK"); return { ok: false, error: `cannot release a ${p.status} payment` }; }
+    // Money is never released while a cardholder dispute is open: the latest dispute event decides.
+    const dispute = (await client.query("SELECT action FROM payment_events WHERE payment_id=$1 AND action IN ('dispute_opened','dispute_closed') ORDER BY created_at DESC, action DESC LIMIT 1", [paymentId])).rows[0];
+    if (dispute?.action === "dispute_opened") { await client.query("ROLLBACK"); return { ok: false, error: "payment is under dispute" }; }
     const deal = (await client.query("SELECT status FROM deals WHERE id=$1", [p.dealId])).rows[0];
     if (deal?.status !== "completed") { await client.query("ROLLBACK"); return { ok: false, error: "deal is not completed" }; }
     const payee = await payeeInfo(p.dealId, client);
