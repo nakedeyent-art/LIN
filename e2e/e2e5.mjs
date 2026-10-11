@@ -1,16 +1,18 @@
+// Ported to the shared runtime: disposable local database (E2E_DATABASE_URL, must end in _e2e), local mail log and base URL come from ./runtime.mjs.
+import * as _rt from "./runtime.mjs";
 import { chromium } from "playwright";
 import { readFileSync } from "node:fs";
 import { execSync } from "node:child_process";
-const B = "http://localhost:3113";
-const br = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium" });
+const B = _rt.B;
+const br = await chromium.launch(_rt.browserOptions);
 let fails = 0, total = 0;
 const rec = (ok, k, extra = "") => { total++; if (!ok) fails++; console.log((ok ? "PASS " : "FAIL ") + k.padEnd(62) + (ok ? "" : String(extra).slice(0, 150))); };
-const sql = (q) => execSync(`su postgres -c "psql lin -At -q"`, { input: q }).toString().trim();
+const sql = _rt.sql;
 const settle = async (p) => { await p.waitForLoadState("networkidle"); await p.waitForTimeout(1500); await p.waitForLoadState("networkidle"); };
 const text = async (p) => (await p.locator("main, .center").first().innerText().catch(() => "")).replace(/\s+/g, " ");
 async function see(p, re, k) { let t = ""; for (let i = 0; i < 40; i++) { t = await text(p); if (re.test(t)) return rec(true, k); await p.waitForTimeout(500); } rec(false, k, `got=${t}`); }
-const START = readFileSync("/tmp/claude-0/mail.log", "utf8").length; // ignore mail from earlier runs
-const mail = () => readFileSync("/tmp/claude-0/mail.log", "utf8").slice(START).split("[mail:dev]").filter((m) => m.includes(" to="));
+const START = readFileSync(_rt.LOG, "utf8").length; // ignore mail from earlier runs
+const mail = () => readFileSync(_rt.LOG, "utf8").slice(START).split("[mail:dev]").filter((m) => m.includes(" to="));
 const mailsTo = (to, subj) => mail().filter((m) => m.includes(`to=${to} subject=${subj}`));
 const resetLink = (to) => mailsTo(to, "Reset your LIN password").map((m) => m.match(/http:\/\/localhost:3113\/reset-password\?token=[\w-]+/)?.[0]).filter(Boolean);
 const newPage = async () => (await br.newContext()).newPage();

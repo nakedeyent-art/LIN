@@ -1,18 +1,20 @@
+// Ported to the shared runtime: disposable local database (E2E_DATABASE_URL, must end in _e2e), local mail log and base URL come from ./runtime.mjs.
+import * as _rt from "./runtime.mjs";
 import { chromium } from "playwright";
 import { readFileSync } from "node:fs";
 import { execSync, spawnSync } from "node:child_process";
 import { createHmac } from "node:crypto";
-const B = "http://localhost:3113", M = "http://localhost:4010", WH = "whsec_test_mock_secret_0123456789", CRON = "test-cron-secret-0123456789abcdef";
-const br = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium" });
+const B = _rt.B, M = "http://localhost:4010", WH = "whsec_test_mock_secret_0123456789", CRON = "test-cron-secret-0123456789abcdef";
+const br = await chromium.launch(_rt.browserOptions);
 let fails = 0, total = 0;
 const rec = (ok, k, extra = "") => { total++; if (!ok) fails++; console.log((ok ? "PASS " : "FAIL ") + k.padEnd(76) + (ok ? "" : String(extra).slice(0, 220))); };
-const sql = (q) => execSync(`su postgres -c "psql lin -At -q"`, { input: q }).toString().trim();
+const sql = _rt.sql;
 const settle = async (p) => { await p.waitForLoadState("networkidle"); await p.waitForTimeout(1400); await p.waitForLoadState("networkidle"); };
 const text = async (p) => (await p.locator("main, .center").first().innerText({ timeout: 2500 }).catch(() => "")).replace(/\s+/g, " ");
 async function see(p, re, k) { re = new RegExp(re.source, "i"); let t = ""; for (let i = 0; i < 40; i++) { t = await text(p); if (re.test(t)) return rec(true, k); await p.waitForTimeout(500); } rec(false, k, `got=${t}`); }
 async function notSee(p, re, k) { await settle(p); const t = await text(p); rec(!new RegExp(re.source, "i").test(t), k, `unexpected: ${t.slice(0, 200)}`); }
-const START = readFileSync("/tmp/claude-0/mail.log", "utf8").length;
-const mails = () => readFileSync("/tmp/claude-0/mail.log", "utf8").slice(START).split("[mail:dev]").filter((m) => m.includes(" to="));
+const START = readFileSync(_rt.LOG, "utf8").length;
+const mails = () => readFileSync(_rt.LOG, "utf8").slice(START).split("[mail:dev]").filter((m) => m.includes(" to="));
 const mailsTo = (to, subj) => mails().filter((m) => m.includes(`to=${to} subject=${subj}`));
 const mock = async (path, method = "GET") => (await fetch(M + path, { method })).json();
 const hook = async (type, obj, o = {}) => {
@@ -95,7 +97,7 @@ rec(sql(`select expires_at is null from deals where id='${A}'`) === "t", "expiry
 rec(sql(`select string_agg(action||':'||to_status, ',' order by created_at, id) from deal_events where deal_id='${A}'`) === "accept:awaiting_signature,sign:awaiting_signature,sign:active", "audit trail: accept, sign, sign→active");
 
 // evidence is immutable at the database level
-const dbErr = (q) => { const r = spawnSync("su", ["postgres", "-c", "psql lin -At -q -v ON_ERROR_STOP=1"], { input: q, encoding: "utf8" }); return r.status === 0 ? "" : String(r.stderr); };
+const dbErr = _rt.dbErr;
 rec(/immutable/.test(dbErr(`update contracts set body='tampered' where deal_id='${A}'`)), "DB refuses to edit contract text");
 rec(/immutable/.test(dbErr(`update contracts set sha256='${"0".repeat(64)}' where deal_id='${A}'`)), "DB refuses to edit the contract hash");
 rec(/immutable/.test(dbErr(`update contracts set executed_at=now() - interval '1 day' where deal_id='${A}'`)), "DB refuses to rewrite the execution time");

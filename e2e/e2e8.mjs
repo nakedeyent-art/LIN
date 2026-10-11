@@ -1,12 +1,14 @@
+// Ported to the shared runtime: disposable local database (E2E_DATABASE_URL, must end in _e2e), local mail log and base URL come from ./runtime.mjs.
+import * as _rt from "./runtime.mjs";
 import { readFileSync } from "node:fs";
 import { execSync } from "node:child_process";
 const PHASE = process.argv[2] ?? "1";
-const B = "http://localhost:3113", SECRET = "test-cron-secret-0123456789abcdef";
+const B = _rt.B, SECRET = "test-cron-secret-0123456789abcdef";
 let fails = 0, total = 0;
 const rec = (ok, k, extra = "") => { total++; if (!ok) fails++; console.log((ok ? "PASS " : "FAIL ") + k.padEnd(72) + (ok ? "" : String(extra).slice(0, 200))); };
-const sql = (q) => execSync(`su postgres -c "psql lin -At -q"`, { input: q }).toString().trim();
-const START = readFileSync("/tmp/claude-0/mail.log", "utf8").length;
-const mails = () => readFileSync("/tmp/claude-0/mail.log", "utf8").slice(START).split("[mail:dev]").filter((m) => m.includes(" to="));
+const sql = _rt.sql;
+const START = readFileSync(_rt.LOG, "utf8").length;
+const mails = () => readFileSync(_rt.LOG, "utf8").slice(START).split("[mail:dev]").filter((m) => m.includes(" to="));
 const mailsTo = (to) => mails().filter((m) => m.includes(`to=${to} `));
 const run = async (qs = "", method = "POST", headers = { Authorization: `Bearer ${SECRET}` }) => {
   const r = await fetch(`${B}/api/cron/daily${qs}`, { method, headers }); return { status: r.status, json: await r.json().catch(() => null) };

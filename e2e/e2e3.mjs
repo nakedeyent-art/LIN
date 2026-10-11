@@ -1,12 +1,14 @@
+// Ported to the shared runtime: disposable local database (E2E_DATABASE_URL, must end in _e2e), local mail log and base URL come from ./runtime.mjs.
+import * as _rt from "./runtime.mjs";
 import { chromium } from "playwright";
 import { readFileSync } from "node:fs";
 import { execSync } from "node:child_process";
-const B = "http://localhost:3113";
-const br = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium" });
+const B = _rt.B;
+const br = await chromium.launch(_rt.browserOptions);
 let fails = 0;
 const check = (k, got, want) => { const ok = want instanceof RegExp ? want.test(String(got)) : got === want; if (!ok) fails++; console.log((ok ? "PASS " : "FAIL ") + k.padEnd(52) + (ok ? "" : ` got=${String(got).slice(0, 110)}`)); };
-const sess = (l) => console.log("  [sessions @ "+l+"]", execSync(`su postgres -c "psql lin -Atc \\"select string_agg(split_part(u.email,'@',1), ',') from sessions s join users u on u.id=s.user_id\\""`).toString().trim());
-const sql = (q) => execSync(`su postgres -c "psql lin -Atc \\"${q}\\""`).toString().trim();
+const sess = (l) => console.log("  [sessions @ "+l+"]", _rt.sql(`select string_agg(split_part(u.email,'@',1), ',') from sessions s join users u on u.id=s.user_id`));
+const sql = _rt.sql;
 const settle = async (p) => { await p.waitForLoadState("networkidle"); await p.waitForTimeout(1200); await p.waitForLoadState("networkidle"); };
 const text = async (p) => (await p.locator("main, .center, body").first().innerText()).replace(/\s+/g, " ");
 const newPage = async () => (await br.newContext()).newPage();
@@ -80,7 +82,7 @@ const o1 = await offer(sponsor, jid, { title: "Sneaker ambassador" });
 check("offer created", o1.url, /\/dashboard\/deals\/[0-9a-f-]{36}\?msg=/);
 const dealUrl = o1.url.split("?")[0];
 check("deal row: offered + attested + expiry", sql("select status, attested_at is not null, expires_at > now() + interval '13 days' from deals"), "offered|t|t");
-check("athlete notified by email", readFileSync("/tmp/claude-0/mail.log", "utf8").includes("to=jordan@x.com subject=You have a new NIL offer"), true);
+check("athlete notified by email", readFileSync(_rt.LOG, "utf8").includes("to=jordan@x.com subject=You have a new NIL offer"), true);
 await jordan.goto(dealUrl); await settle(jordan);
 const jt = await text(jordan);
 check("athlete sees accept + minor notice", /Accept/.test(jt) && /under 18/.test(jt), true);
@@ -100,7 +102,7 @@ check("status unchanged after forgery", sql("select status from deals"), "offere
 await jordan.goto(dealUrl); await settle(jordan);
 await jordan.click("button:has-text('Accept')"); await settle(jordan);
 check("minor accept -> guardian_review (NOT active)", sql("select status from deals"), "guardian_review");
-check("guardian emailed", readFileSync("/tmp/claude-0/mail.log", "utf8").includes("to=maria@x.com subject=NIL deal update: Awaiting guardian"), true);
+check("guardian emailed", readFileSync(_rt.LOG, "utf8").includes("to=maria@x.com subject=NIL deal update: Awaiting guardian"), true);
 // athlete can't self-approve via forgery
 await jordan.goto(dealUrl); await settle(jordan);
 check("athlete has no approve button", /Approve/.test(await text(jordan)), false);

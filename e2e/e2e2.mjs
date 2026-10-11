@@ -1,11 +1,13 @@
+// Ported to the shared runtime: disposable local database (E2E_DATABASE_URL, must end in _e2e), local mail log and base URL come from ./runtime.mjs.
+import * as _rt from "./runtime.mjs";
 import { chromium } from "playwright";
 import { readFileSync } from "node:fs";
 import { execSync } from "node:child_process";
-const B = "http://localhost:3113";
-const br = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium" }).catch(() => chromium.launch());
+const B = _rt.B;
+const br = await chromium.launch(_rt.browserOptions);
 const log = (k, v) => console.log(k.padEnd(40), v);
-const sql = (q) => execSync(`su postgres -c "psql lin -Atc \\"${q}\\""`).toString().trim();
-const mails = () => readFileSync("/tmp/claude-0/mail.log", "utf8").split("[mail:dev]").filter((m) => m.includes(" to="));
+const sql = _rt.sql;
+const mails = () => readFileSync(_rt.LOG, "utf8").split("[mail:dev]").filter((m) => m.includes(" to="));
 const lastLink = (to, re) => { const m = mails().filter((x) => x.includes(`to=${to} `)).map((x) => x.match(re)?.[0]).filter(Boolean); return m.at(-1); };
 const body = async (p) => (await p.locator("body").innerText()).replace(/\s+/g, " ");
 const path = (p) => { const u = new URL(p.url()); return u.pathname + u.search.slice(0, 60); };

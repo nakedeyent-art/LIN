@@ -1,6 +1,8 @@
+// Ported to the shared runtime: disposable local database (E2E_DATABASE_URL, must end in _e2e), local mail log and base URL come from ./runtime.mjs.
+import * as _rt from "./runtime.mjs";
 import { chromium } from "playwright";
-const B = "http://localhost:3112";
-const br = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium" }).catch(() => chromium.launch());
+const B = _rt.B;
+const br = await chromium.launch(_rt.browserOptions);
 const log = (k, v) => console.log(k.padEnd(34), v);
 const text = async (p) => (await p.locator("body").innerText()).replace(/\s+/g, " ").slice(0, 110);
 

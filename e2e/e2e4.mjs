@@ -1,11 +1,13 @@
+// Ported to the shared runtime: disposable local database (E2E_DATABASE_URL, must end in _e2e), local mail log and base URL come from ./runtime.mjs.
+import * as _rt from "./runtime.mjs";
 import { chromium } from "playwright";
 import { readFileSync } from "node:fs";
 import { execSync } from "node:child_process";
-const B = "http://localhost:3113";
-const br = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium" });
+const B = _rt.B;
+const br = await chromium.launch(_rt.browserOptions);
 let fails = 0, total = 0;
 const rec = (ok, k, extra = "") => { total++; if (!ok) fails++; console.log((ok ? "PASS " : "FAIL ") + k.padEnd(60) + (ok ? "" : extra)); };
-const sql = (q) => execSync(`su postgres -c "psql lin -At -q"`, { input: q }).toString().trim();
+const sql = _rt.sql;
 const settle = async (p) => { await p.waitForLoadState("networkidle"); await p.waitForTimeout(1500); await p.waitForLoadState("networkidle"); };
 const mainText = async (p) => (await p.locator("main, .center").first().innerText().catch(() => "")).replace(/\s+/g, " ");
 // poll until the page text matches (dev-mode compiles make fixed sleeps flaky)
@@ -13,7 +15,7 @@ const ci = (re) => new RegExp(re.source, re.flags.includes("i") ? re.flags : re.
 async function see(p, re0, k) { const re = ci(re0); let t = ""; for (let i = 0; i < 40; i++) { t = await mainText(p); if (re.test(t)) return rec(true, k); await p.waitForTimeout(500); } rec(false, k, `got=${t.slice(0, 160)}`); }
 async function notSee(p, re0, k) { const re = ci(re0); await settle(p); const t = await mainText(p); rec(!re.test(t), k, `unexpected match in: ${t.slice(0, 160)}`); }
 const status = async (p, path) => { const r = await p.goto(B + path); await settle(p); return r.status(); };
-const mails = () => readFileSync("/tmp/claude-0/mail.log", "utf8");
+const mails = () => readFileSync(_rt.LOG, "utf8");
 const link = (to, re) => { const m = mails().split("[mail:dev]").filter((x) => x.includes(`to=${to} `)).map((x) => x.match(re)?.[0]).filter(Boolean); return m.at(-1); };
 const newPage = async () => (await br.newContext()).newPage();
 const today = new Date().toISOString().slice(0, 10);
