@@ -20,7 +20,7 @@ async function envelopes(live: number, overdue: number) {
   await db().query(`DO $$ DECLARE i INT; d UUID; v UUID; e UUID; BEGIN
     FOR i IN 1..${live + overdue} LOOP
       INSERT INTO athlete_documents(athlete_id,title,category,created_by) VALUES('${athlete}','Doc '||i,'contracts','${athlete}') RETURNING id INTO d;
-      INSERT INTO document_versions(document_id,version,file_name,media_type,contents,sha256,uploaded_by) VALUES(d,1,'a.pdf','application/pdf','\\x00',repeat('0',64),'${athlete}') RETURNING id INTO v;
+      INSERT INTO document_versions(document_id,version,file_name,media_type,contents,sha256,uploaded_by,size_bytes) VALUES(d,1,'a.pdf','application/pdf','\\x00',repeat('0',64),'${athlete}',1) RETURNING id INTO v;
       INSERT INTO signing_envelopes(document_id,version_id,athlete_id,created_by,title,status,expires_at)
         VALUES(d,v,'${athlete}','${athlete}','Env '||i,'draft', CASE WHEN i<=${overdue} THEN now()-interval '1 hour' ELSE now()+interval '5 days' END) RETURNING id INTO e;
       INSERT INTO signing_recipients(envelope_id,user_id,capacity,signing_order) VALUES(e,'${athlete}','athlete',1);

@@ -17,7 +17,7 @@ export const MAX_DOCUMENTS_PER_ATHLETE = 500;
 export class UploadLimitError extends Error {}
 
 export async function storageUsed(athleteId: string, c: Pick<import('pg').PoolClient,'query'> = db()): Promise<{ bytes: number; documents: number }> {
-  const r = (await c.query(`SELECT COALESCE(sum(octet_length(v.contents)),0)::float8 AS bytes, count(DISTINCT d.id)::int AS documents
+  const r = (await c.query(`SELECT COALESCE(sum(v.size_bytes),0)::float8 AS bytes, count(DISTINCT d.id)::int AS documents
     FROM athlete_documents d LEFT JOIN document_versions v ON v.document_id=d.id WHERE d.athlete_id=$1`, [athleteId])).rows[0];
   return { bytes: Number(r.bytes), documents: r.documents };
 }

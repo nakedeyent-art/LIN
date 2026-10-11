@@ -11,7 +11,7 @@ beforeEach(async () => {
 });
 afterAll(async () => { await db().end(); });
 const addVersion = (bytes: number, version: number) =>
-  db().query("INSERT INTO document_versions(document_id,version,file_name,media_type,contents,sha256,uploaded_by) VALUES($1,$2,'a.pdf','application/pdf',decode(repeat('ab',$3),'hex'),repeat('0',64),$4)", [doc, version, bytes, athlete]);
+  db().query("INSERT INTO document_versions(document_id,version,file_name,media_type,contents,sha256,uploaded_by,size_bytes) VALUES($1,$2,'a.pdf','application/pdf',decode(repeat('ab',$3),'hex'),repeat('0',64),$4,$3)", [doc, version, bytes, athlete]);
 async function check(documentId: string | null, add: number) {
   const c = await db().connect();
   try { await c.query('BEGIN'); await assertUploadAllowed(c, athlete, documentId, add); await c.query('ROLLBACK'); return 'ok'; }

@@ -17,7 +17,7 @@ beforeEach(async()=>{
  await db().query("INSERT INTO athlete_relationships(athlete_id,member_id,relationship,guardian_approved,can_view_health) VALUES($1,$2,'parent',true,true),($1,$3,'coach',false,false)",[athlete.userId,guardian.userId,coach.userId]);
  doc=(await db().query("INSERT INTO athlete_documents(athlete_id,title,category,created_by) VALUES($1,'Test agreement','contracts',$1) RETURNING id",[athlete.userId])).rows[0].id;
  const pdf=await textPdf('Agreement','The athlete will attend the community event.');
- await db().query("INSERT INTO document_versions(document_id,version,file_name,media_type,contents,sha256,uploaded_by) VALUES($1,1,'agreement.pdf','application/pdf',$2,$3,$4)",[doc,Buffer.from(pdf),pdfHash(pdf),athlete.userId]);
+ await db().query("INSERT INTO document_versions(document_id,version,file_name,media_type,contents,sha256,uploaded_by,size_bytes) VALUES($1,1,'agreement.pdf','application/pdf',$2,$3,$4,$5)",[doc,Buffer.from(pdf),pdfHash(pdf),athlete.userId,pdf.byteLength]);
 });
 afterAll(async()=>{await db().end();});
 describe('document boundaries',()=>{

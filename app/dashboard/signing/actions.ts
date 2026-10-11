@@ -38,7 +38,8 @@ export async function finishSigning(form:FormData) {
  await requireRecentMfa(s,`/dashboard/signing/${id}`);
  const jar=await cookies(),token=jar.get(`forg3_${id}`)?.value??'',values:Record<string,string>={};
  for(const [key,value] of form.entries())if(key.startsWith('field_')&&typeof value==='string')values[key.slice(6)]=value;
- try{await signEnvelope(s,id,token,values,form.get('consent')==='on');}catch(e){redirect(`/dashboard/signing/${id}?error=${encodeURIComponent((e as Error).message)}`);}
+ // A deadlock (40P01) aborts one of two racing transactions; the signature is still valid, so try it once more before giving up.
+ try{try{await signEnvelope(s,id,token,values,form.get('consent')==='on');}catch(e){if((e as {code?:string}).code!=='40P01')throw e;await signEnvelope(s,id,token,values,form.get('consent')==='on');}}catch(e){redirect(`/dashboard/signing/${id}?error=${encodeURIComponent((e as Error).message)}`);}
  jar.set(`forg3_${id}`,'',{path:`/dashboard/signing/${id}`,maxAge:0});redirect(`/dashboard/signing/${id}`);
 }
 export async function endEnvelope(form:FormData) {

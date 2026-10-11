@@ -38,7 +38,7 @@ export async function uploadDocument(form: FormData) {
   } else {
    id=(await c.query(`INSERT INTO athlete_documents(athlete_id,title,category,folder,tags,expires_on,created_by) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id`,[athleteId,title,category,folder,tags,expires||null,s.userId])).rows[0].id;
   }
-  await c.query(`INSERT INTO document_versions(document_id,version,file_name,media_type,contents,sha256,uploaded_by) SELECT $1,COALESCE(MAX(version),0)+1,$2,$3,$4,$5,$6 FROM document_versions WHERE document_id=$1`,[id,checked!.fileName,checked!.mediaType,bytes,checked!.sha256,s.userId]);
+  await c.query(`INSERT INTO document_versions(document_id,version,file_name,media_type,contents,sha256,uploaded_by,size_bytes) SELECT $1,COALESCE(MAX(version),0)+1,$2,$3,$4,$5,$6,$7 FROM document_versions WHERE document_id=$1`,[id,checked!.fileName,checked!.mediaType,bytes,checked!.sha256,s.userId,bytes.byteLength]);
   await c.query("INSERT INTO operations_activity(athlete_id,actor_id,document_id,action) VALUES($1,$2,$3,$4)",[athleteId,s.userId,id,documentId?"document.version_added":"document.uploaded"]);
   await c.query("COMMIT");
  } catch(e) { await c.query("ROLLBACK"); fail(e instanceof UploadLimitError || (e instanceof Error && /access changed|active documents/.test(e.message))?(e as Error).message:"The document could not be saved. Check its details and try again."); } finally {c.release();}
@@ -60,14 +60,15 @@ export async function shareDocument(form: FormData) {
   if(row.status==='completed'&&!remove) throw new Error("Completed records cannot be changed");
   if(remove) await c.query("DELETE FROM document_grants WHERE document_id=$1 AND user_id=$2",[id,member]);
   else {
-   const rel=(await c.query("SELECT 1 FROM athlete_relationships WHERE athlete_id=$1 AND member_id=$2",[d.athlete_id,member])).rowCount;
-   if(!rel) throw new Error("No relationship");
+   // Only people the family has actually accepted: a current guardian, or a relationship the guardian approved. Pending or unapproved rows grant nothing.
+   const rel=(await c.query("SELECT 1 FROM guardian_links WHERE athlete_id=$1 AND member_id=$2 UNION ALL SELECT 1 FROM athlete_relationships WHERE athlete_id=$1 AND member_id=$2 AND guardian_approved",[d.athlete_id,member])).rowCount;
+   if(!rel) throw new Error("That person is not an approved member of this athlete’s team");
    await c.query("INSERT INTO document_grants(document_id,user_id,granted_by) VALUES($1,$2,$3) ON CONFLICT DO NOTHING",[id,member,s.userId]);
    await c.query("UPDATE athlete_documents SET access_scope='consented' WHERE id=$1",[id]);
   }
   await c.query("INSERT INTO operations_activity(athlete_id,actor_id,document_id,action) VALUES($1,$2,$3,$4)",[d.athlete_id,s.userId,id,remove?"document.access_revoked":"document.access_granted"]);
   await c.query("COMMIT");
- } catch { await c.query("ROLLBACK"); redirect(`/dashboard/documents/${id}?error=Sharing+could+not+be+updated`); } finally {c.release();}
+ } catch(e) { await c.query("ROLLBACK"); redirect(`/dashboard/documents/${id}?error=${encodeURIComponent(e instanceof Error&&/approved member|Completed records/.test(e.message)?e.message:"Sharing could not be updated")}`); } finally {c.release();}
  redirect(`/dashboard/documents/${id}`);
 }
 

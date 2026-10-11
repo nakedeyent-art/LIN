@@ -52,7 +52,7 @@ export async function createEnvelope(s:Session,documentId:string,days:number) {
 export async function addRecipient(s:Session,id:string,userId:string,capacity:string,order:number) {
  if(!validId(userId)||!['athlete','sponsor','guardian','agent','school','internal'].includes(capacity)||!Number.isInteger(order)||order<1||order>30)throw new Error("Choose a valid recipient, capacity and signing order.");
  const c=await db().connect();
- try {await c.query('BEGIN');await c.query('SELECT 1 FROM signing_envelopes WHERE id=$1 FOR UPDATE',[id]);
+ try {await c.query('BEGIN');await lockDealThenEnvelope(c,id);
   const e=await getEnvelope(s,id,c);
   if(!e||e.status!=='draft'||!await familyAuthority(s.userId,e.athlete_id,c))throw new Error("Only the family can configure a draft.");
   if(!await recipientAuthorized(userId,capacity,e,c))throw new Error("The recipient does not have this relationship to the athlete.");
@@ -64,7 +64,7 @@ export async function addRecipient(s:Session,id:string,userId:string,capacity:st
 export async function addField(s:Session,id:string,input:{recipient:string;kind:string;label:string;page:number;x:number;y:number;width:number;required:boolean}) {
  if(!validId(input.recipient)||!FIELD_KINDS.some(k=>k===input.kind)||!input.label.trim()||input.label.length>120||![input.x,input.y,input.width].every(Number.isFinite)||input.x<0||input.y<0||input.y>.95||input.width<=0||input.x+input.width>1||!Number.isInteger(input.page)||input.page<1)throw new Error("Enter valid field details and a position within the page.");
  const c=await db().connect();
- try {await c.query('BEGIN');await c.query('SELECT 1 FROM signing_envelopes WHERE id=$1 FOR UPDATE',[id]);
+ try {await c.query('BEGIN');await lockDealThenEnvelope(c,id);
   const e=await getEnvelope(s,id,c);
   if(!e||e.status!=='draft'||!await familyAuthority(s.userId,e.athlete_id,c))throw new Error("Only the family can configure a draft.");
   const v=(await c.query('SELECT contents FROM document_versions WHERE id=$1',[e.version_id])).rows[0];
@@ -77,7 +77,7 @@ export async function addField(s:Session,id:string,input:{recipient:string;kind:
 }
 export async function sendEnvelope(s:Session,id:string) {
  const c=await db().connect();
- try {await c.query('BEGIN');await c.query('SELECT 1 FROM signing_envelopes WHERE id=$1 FOR UPDATE',[id]);
+ try {await c.query('BEGIN');await lockDealThenEnvelope(c,id);
   const e=await getEnvelope(s,id,c);
   if(!e||e.status!=='draft'||!await familyAuthority(s.userId,e.athlete_id,c))throw new Error("Only the family can send a draft.");
   if(new Date(e.expires_at)<=new Date())throw new Error("This draft has expired. Create a new envelope.");
@@ -97,7 +97,7 @@ export async function sendEnvelope(s:Session,id:string) {
 }
 export async function startSigning(s:Session,id:string) {
  const c=await db().connect();
- try {await c.query('BEGIN');await c.query('SELECT 1 FROM signing_envelopes WHERE id=$1 FOR UPDATE',[id]);
+ try {await c.query('BEGIN');await lockDealThenEnvelope(c,id);
   const e=await getEnvelope(s,id,c);
   if(!e||!['sent','viewed','partially_signed'].includes(e.status)||new Date(e.expires_at)<=new Date())throw new Error("This envelope is not open for signing.");
   const r=(await c.query('SELECT * FROM signing_recipients WHERE envelope_id=$1 AND user_id=$2',[id,s.userId])).rows[0];
@@ -110,10 +110,15 @@ export async function startSigning(s:Session,id:string) {
   await signingAudit(c,id,s.userId,'envelope.viewed');await c.query('COMMIT');return token;
  }catch(e){await c.query('ROLLBACK');throw e;}finally{c.release();}
 }
+/** Lock order everywhere is deal, then envelope: the deal paths (generating or voiding an agreement) hold the deal first, so every envelope mutation must too, or the two deadlock. */
+async function lockDealThenEnvelope(c:PoolClient,envelopeId:string) {
+ await c.query('SELECT d.id FROM deals d WHERE d.id=(SELECT deal_id FROM signing_envelopes WHERE id=$1) FOR UPDATE OF d',[envelopeId]);
+ await c.query('SELECT 1 FROM signing_envelopes WHERE id=$1 FOR UPDATE',[envelopeId]);
+}
 export async function signEnvelope(s:Session,id:string,token:string,values:Record<string,string>,consent:boolean) {
  if(!consent)throw new Error("Confirm electronic signing consent.");
  const c=await db().connect();
- try {await c.query('BEGIN');await c.query('SELECT 1 FROM signing_envelopes WHERE id=$1 FOR UPDATE',[id]);
+ try {await c.query('BEGIN');await lockDealThenEnvelope(c,id);
   const e=await getEnvelope(s,id,c);
   if(!e||!['sent','viewed','partially_signed'].includes(e.status)||new Date(e.expires_at)<=new Date())throw new Error("This envelope is not open for signing.");
   const session=(await c.query('SELECT * FROM signing_sessions WHERE token_hash=$1 AND envelope_id=$2 AND user_id=$3 AND used_at IS NULL AND expires_at>now() FOR UPDATE',[hashToken(token),id,s.userId])).rows[0];
@@ -162,7 +167,7 @@ export async function signEnvelope(s:Session,id:string,token:string,values:Recor
 }
 export async function closeEnvelope(s:Session,id:string,action:'declined'|'voided') {
  const c=await db().connect();
- try {await c.query('BEGIN');await c.query('SELECT 1 FROM signing_envelopes WHERE id=$1 FOR UPDATE',[id]);const e=await getEnvelope(s,id,c);
+ try {await c.query('BEGIN');await lockDealThenEnvelope(c,id);const e=await getEnvelope(s,id,c);
   if(!e||!['draft','sent','viewed','partially_signed'].includes(e.status))throw new Error("This envelope is already closed.");
   if(action==='voided'&&!await familyAuthority(s.userId,e.athlete_id,c))throw new Error("Only the family can void this agreement.");
   if(action==='declined'){

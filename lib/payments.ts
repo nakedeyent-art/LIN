@@ -165,16 +165,22 @@ async function markFunded(c: PoolClient, p: PaymentRow, s: { id: string; payment
 
 /** For a pending payment whose webhook may not have arrived: ask Stripe directly. */
 export async function reconcilePayment(paymentId: string): Promise<void> {
+  // Ask Stripe with no lock held: a network call under a row lock stalls every webhook and release for this payment.
+  const peek = (await db().query("SELECT * FROM deal_payments WHERE id=$1", [paymentId])).rows[0];
+  if (!peek || peek.status !== "pending_checkout" || !peek.stripe_checkout_session_id) return;
+  let s: Awaited<ReturnType<typeof stripe.getCheckoutSession>>;
+  try { s = await stripe.getCheckoutSession(mapPayment(peek).sessionId!); } catch (e) { console.error("reconcile failed:", safeMsg(e)); return; }
+  if (s.status !== "complete" && s.status !== "expired") return;
   const client = await db().connect();
   let funded = false, dealId = "";
   try {
     await client.query("BEGIN");
+    // Re-read under the lock: a webhook may have settled it while we were talking to Stripe.
     const row = (await client.query("SELECT * FROM deal_payments WHERE id=$1 FOR UPDATE", [paymentId])).rows[0];
-    if (!row || row.status !== "pending_checkout" || !row.stripe_checkout_session_id) { await client.query("ROLLBACK"); return; }
+    if (!row || row.status !== "pending_checkout") { await client.query("ROLLBACK"); return; }
     const p = mapPayment(row); dealId = p.dealId;
-    const s = await stripe.getCheckoutSession(p.sessionId!);
     if (s.status === "complete") funded = await markFunded(client, p, s);
-    else if (s.status === "expired") { await client.query("UPDATE deal_payments SET status='expired', updated_at=NOW() WHERE id=$1", [p.id]); await pevent(client, p.id, "expired"); }
+    else { await client.query("UPDATE deal_payments SET status='expired', updated_at=NOW() WHERE id=$1", [p.id]); await pevent(client, p.id, "expired"); }
     await client.query("COMMIT");
   } catch (e) { await client.query("ROLLBACK").catch(() => {}); console.error("reconcile failed:", safeMsg(e)); return; } finally { client.release(); }
   if (funded) await notifyDealParties(dealId, "A NIL deal was funded", "The sponsor's payment is in and is being held until the deal is marked complete.");
