@@ -52,6 +52,7 @@ try {
  const completed=await g.request.get(`${B}/dashboard/signing/${envelope}/download?kind=completed`);ok(completed.status()===200&&(await completed.body()).subarray(0,5).toString()==='%PDF-','completed PDF is downloadable');
  ok((await g.request.get(`${B}/dashboard/signing/${envelope}/download?kind=certificate`)).status()===200,'audit certificate is downloadable');
  await goto(g,`/dashboard/schedule?athlete=${athlete}`);await g.getByText('Add event',{exact:true}).click();await g.locator('input[name=name]').first().fill('Saturday game');await g.locator('[name=starts_at]').fill('2027-01-10T15:00');await g.locator('[name=ends_at]').fill('2027-01-10T17:00');await submitAndWait(g,g.getByRole('button',{name:'Save event'}));ok(await g.getByRole('cell',{name:'Saturday game'}).count()===1,'game appears on athlete schedule');
+ const row0=g.locator('tr',{hasText:'Saturday game'});await row0.getByText(/EST|EDT/).first().waitFor({timeout:15000});await row0.getByRole('button',{name:'Show in my time zone'}).click();await row0.getByText(/UTC/).first().waitFor({timeout:15000});ok(true,'event shows venue time and can be shown in the viewer’s zone');
  const row=()=>g.locator('tr',{hasText:'Saturday game'});
  await row().locator('select[name=consent]').selectOption('give');await submitAndWait(g,row().getByRole('button',{name:'Update',exact:true}));
  await row().getByText(/^Guardian consent recorded$/).waitFor({timeout:15000});ok(true,'a guardian can record consent for an event');

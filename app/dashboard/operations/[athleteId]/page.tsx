@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { requireUser } from "@/lib/session";
 import { athleteOverview, ATHLETE_TABS, canEditFamily } from "@/lib/operations";
 import { athleteSchedule } from "@/lib/sports-operations";
+import { formatInZone } from "@/lib/timezones";
 import { listDocuments } from "@/lib/documents";
 import { formatCents } from "@/lib/deals";
 
@@ -24,7 +25,7 @@ export default async function AthleteRecord({ params, searchParams }: { params: 
   return <><Link className="muted" href="/dashboard/operations">← Athlete operations</Link><header className="record-header"><div><p className="eyebrow">Athlete record</p><h1>{a.name}</h1><p className="muted">{a.sport} · {a.level.replaceAll("_", " ")}</p></div><span className="status-dot">{a.inSeason ? "In season" : "Off season"}</span></header>
     <nav className="record-tabs" aria-label="Athlete sections">{ATHLETE_TABS.map(t => <Link key={t} href={`${base}?tab=${t}`} aria-current={tab === t ? "page" : undefined}>{t[0].toUpperCase()+t.slice(1)}</Link>)}</nav>
     <div className="record-columns"><section className="work-panel"><h2>{tab[0].toUpperCase()+tab.slice(1)}</h2>
-      {tab === "overview" && <><h3>Upcoming games and events</h3>{schedule.filter(e=>new Date(e.starts_at)>new Date()&&e.status!=='cancelled').sort((x,y)=>new Date(x.starts_at).getTime()-new Date(y.starts_at).getTime()).slice(0,4).map(e=><p key={e.id}><Link href={link("/dashboard/schedule")}>{e.name} · {new Date(e.starts_at).toISOString().slice(0,16)} UTC</Link></p>)}<h3>Expiring documents</h3>{documents.filter(d=>d.expires_on&&d.expires_on<=new Date(Date.now()+7*86400000).toISOString().slice(0,10)).map(d=><p key={d.id}><Link href={`/dashboard/documents/${d.id}`}>{d.title} · {d.expires_on}</Link></p>)}<h3>Needs attention</h3>{pending.length ? <ul>{pending.map(d => <li key={d.id}><Link href={`/dashboard/deals/${d.id}`}>{d.title} · {d.status === "guardian_review" ? "Guardian approval" : "Signatures needed"}</Link></li>)}</ul> : <p className="muted">No deal approvals or signatures awaiting action.</p>}
+      {tab === "overview" && <><h3>Upcoming games and events</h3>{schedule.filter(e=>new Date(e.starts_at)>new Date()&&e.status!=='cancelled').sort((x,y)=>new Date(x.starts_at).getTime()-new Date(y.starts_at).getTime()).slice(0,4).map(e=><p key={e.id}><Link href={link("/dashboard/schedule")}>{e.name} · {formatInZone(e.starts_at,e.timezone)}</Link></p>)}<h3>Expiring documents</h3>{documents.filter(d=>d.expires_on&&d.expires_on<=new Date(Date.now()+7*86400000).toISOString().slice(0,10)).map(d=><p key={d.id}><Link href={`/dashboard/documents/${d.id}`}>{d.title} · {d.expires_on}</Link></p>)}<h3>Needs attention</h3>{pending.length ? <ul>{pending.map(d => <li key={d.id}><Link href={`/dashboard/deals/${d.id}`}>{d.title} · {d.status === "guardian_review" ? "Guardian approval" : "Signatures needed"}</Link></li>)}</ul> : <p className="muted">No deal approvals or signatures awaiting action.</p>}
         {summary.academics?.alerts.map((alert, i) => <p key={i} className="disclaimer">{alert.message}</p>)}
         {summary.health?.next && <p>Next development session: {summary.health.next.title} · {summary.health.next.day}</p>}
         <h3>Deal deliverables</h3>{dealTable}</>}

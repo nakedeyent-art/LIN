@@ -8,7 +8,7 @@ async function user(name: string, role: Actor['role']): Promise<Actor> {
   const id = (await db().query('INSERT INTO users(email,full_name,role,password_hash,email_verified_at) VALUES($1,$2,$3,$4,now()) RETURNING id', [name.toLowerCase() + '@example.test', name, role, 'x'])).rows[0].id;
   return { userId: id, role };
 }
-const edit = (o: Partial<EventEdit> = {}): EventEdit => ({ name: 'Showcase', kind: 'showcase', startsAt: '2026-11-20T10:00', endsAt: '2026-11-20T14:00', venue: 'Main Field', address: '1 Park Rd', latitude: '', longitude: '', notes: '', recruitingVisible: false, ...o });
+const edit = (o: Partial<EventEdit> = {}): EventEdit => ({ name: 'Showcase', kind: 'showcase', startsAt: '2026-11-20T10:00', endsAt: '2026-11-20T14:00', timezone: 'UTC', venue: 'Main Field', address: '1 Park Rd', latitude: '', longitude: '', notes: '', recruitingVisible: false, ...o });
 const row = async () => (await db().query(`SELECT e.name,e.status,e.starts_on::text AS starts_on,d.starts_at,d.ends_at,d.recruiting_visible,d.notes,v.name AS venue,a.guardian_consent_at FROM events e JOIN sports_event_details d ON d.event_id=e.id LEFT JOIN sports_venues v ON v.id=d.venue_id JOIN sports_attendees a ON a.event_id=e.id WHERE e.id=$1`, [ev])).rows[0];
 const notes = async (uid: string) => (await db().query("SELECT title FROM notifications WHERE user_id=$1 ORDER BY id", [uid])).rows.map((r) => r.title as string);
 
@@ -182,5 +182,15 @@ describe('organizer without family authority', () => {
     expect((await updateEvent(guardian, ev, edit({ name: 'Still mine' }))).ok).toBe(true);
     expect((await updateEvent(guardian, ev, edit({ name: 'Still mine', recruitingVisible: true }))).ok).toBe(false);
     expect((await cancelEvent(guardian, ev)).ok).toBe(true);
+  });
+});
+
+describe('venue time zones', () => {
+  it('stores the instant for the venue wall-clock time and keeps the zone', async () => {
+    expect((await updateEvent(guardian, ev, edit({ startsAt: '2026-11-20T10:00', endsAt: '2026-11-20T14:00', timezone: 'America/Los_Angeles' }))).ok).toBe(true);
+    const r = (await db().query('SELECT starts_at,timezone FROM sports_event_details WHERE event_id=$1', [ev])).rows[0];
+    expect(new Date(r.starts_at).toISOString()).toBe('2026-11-20T18:00:00.000Z');
+    expect(r.timezone).toBe('America/Los_Angeles');
+    expect((await updateEvent(guardian, ev, edit({ timezone: 'Mars/Olympus' }))).ok).toBe(false);
   });
 });

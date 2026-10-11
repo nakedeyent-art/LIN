@@ -4,13 +4,14 @@ import { validId } from './operations';
 import { familyAuthority } from './signing';
 import { canManageTeam } from './access';
 import { EVENT_KINDS } from './sports-operations';
+import { zonedToUtc, isValidTimeZone } from './timezones';
 
 export type Result = { ok: true; message?: string } | { ok: false; error: string };
 const fail = (error: string): Result => ({ ok: false, error });
 type Actor = { userId: string; role: Parameters<typeof canManageTeam>[0]['role'] };
 
 export type EventEdit = {
-  name: string; kind: string; startsAt: string; endsAt: string; venue: string; address: string;
+  name: string; kind: string; startsAt: string; endsAt: string; timezone: string; venue: string; address: string;
   latitude: string; longitude: string; notes: string; recruitingVisible: boolean;
 };
 
@@ -39,7 +40,8 @@ async function mayManage(c: PoolClient, userId: string, eventId: string): Promis
 export async function updateEvent(actor: Actor, eventId: string, edit: EventEdit): Promise<Result> {
   if (!validId(eventId)) return fail('Unknown event.');
   const name = edit.name.trim();
-  const start = Date.parse(edit.startsAt + 'Z'), end = Date.parse(edit.endsAt + 'Z');
+  if (!isValidTimeZone(edit.timezone)) return fail('Choose a valid time zone.');
+  const start = zonedToUtc(edit.startsAt, edit.timezone), end = zonedToUtc(edit.endsAt, edit.timezone);   // wall-clock at the venue → instant
   if (!name || name.length > 160 || !(EVENT_KINDS as readonly string[]).includes(edit.kind) || !Number.isFinite(start) || !Number.isFinite(end) || end <= start)
     return fail('Enter a name and a valid start and end time.');
   const lat = edit.latitude.trim(), lon = edit.longitude.trim();
@@ -70,7 +72,7 @@ export async function updateEvent(actor: Actor, eventId: string, edit: EventEdit
     }
     const material = new Date(ev.starts_at).getTime() !== start || new Date(ev.ends_at).getTime() !== end || venueChanged;
     await c.query('UPDATE events SET name=$2,starts_on=$3 WHERE id=$1', [eventId, name, new Date(start).toISOString().slice(0, 10)]);
-    await c.query('UPDATE sports_event_details SET kind=$2,starts_at=$3,ends_at=$4,venue_id=$5,notes=$6,recruiting_visible=$7 WHERE event_id=$1', [eventId, edit.kind, new Date(start), new Date(end), venueId, edit.notes.trim().slice(0, 2000), recruiting]);
+    await c.query('UPDATE sports_event_details SET kind=$2,starts_at=$3,ends_at=$4,venue_id=$5,notes=$6,recruiting_visible=$7,timezone=$8 WHERE event_id=$1', [eventId, edit.kind, new Date(start), new Date(end), venueId, edit.notes.trim().slice(0, 2000), recruiting, edit.timezone]);
     if (material) {
       // A guardian agreed to the event as it WAS. A new time or place needs a fresh yes.
       await c.query('UPDATE sports_attendees SET guardian_consent_by=NULL,guardian_consent_at=NULL WHERE event_id=$1', [eventId]);
