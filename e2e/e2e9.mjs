@@ -313,9 +313,11 @@ rec(pstate(G) === "none", "no payment created for the other sponsor's deal");
 await mfaRefresh(ada, B, secrets["ada@x.com"]); await open(ada, `/dashboard/deals/${Bd}/contract`);   // Ada has no standing on Jordan's deal
 const J = mkDeal("ada@x.com", "Forged signature"); await mfaRefresh(ada, B, secrets["ada@x.com"]); await open(ada, `/dashboard/deals/${J}`); await click(ada, "Accept");
 await mfaRefresh(ada, B, secrets["ada@x.com"]); await open(ada, `/dashboard/deals/${J}/contract`);
-await ada.locator("[name=deal_id]").evaluate((el, v) => { el.value = v; }, Bd);
-await ada.fill("[name=typed_name]", "Ada Adult"); await ada.check("[name=consent]"); await ada.locator("main button:has-text('Sign agreement')").click(); await settle(ada);
-rec(sql(`select count(*) from contract_signatures where signer_user_id='${id("ada@x.com")}' and contract_id=(select id from contracts where deal_id='${Bd}')`) === "0", "FORGED: signing a deal you're not part of records nothing");
+// Forgery through Forg3: point the "generate agreement" form at Jordan's deal. No standing → refused, and nothing is created.
+await ada.locator('main form:has(button:has-text("Review and sign with Forg3")) [name=deal_id]').evaluate((el, v) => { el.value = v; }, Bd);
+await ada.locator("main button:has-text('Review and sign with Forg3')").click(); await settle(ada);
+rec(/Deal unavailable|error=/.test(decodeURIComponent(ada.url())), "FORGED: generating an agreement for a deal you're not part of is refused", ada.url());
+rec(sql(`select count(*) from signing_envelopes where deal_id='${Bd}' and created_by='${id("ada@x.com")}'`) === "0" && sql(`select count(*) from contract_signatures where signer_user_id='${id("ada@x.com")}' and contract_id=(select id from contracts where deal_id='${Bd}')`) === "0", "FORGED: signing a deal you're not part of records nothing");
 
 // =================== H. expiry and withdrawal while signing ===================
 sql(`update deals set expires_at = now() - interval '1 minute' where id='${J}'`);
