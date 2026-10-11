@@ -326,7 +326,7 @@ rec((await ada.locator("main [name=typed_name]").count()) === 0, "no signing for
 const K = mkDeal("ada@x.com", "Withdraw while signing"); await mfaRefresh(ada, B, secrets["ada@x.com"]); await open(ada, `/dashboard/deals/${K}`); await click(ada, "Accept"); await mfaRefresh(sam, B, samSecret); await signAs(sam, K, "Sam Sponsor");
 await mfaRefresh(sam, B, samSecret); await open(sam, `/dashboard/deals/${K}`); await click(sam, "Withdraw offer");
 rec(dstate(K) === "withdrawn" && sql(`select (voided_at is not null)::text from contracts where deal_id='${K}'`) === "true", "withdrawing during signing voids the agreement");
-rec(sql(`select count(*) from contract_signatures where contract_id=(select id from contracts where deal_id='${K}')`) === "1", "…but the existing signature stays on record");
+rec(sql(`select count(*)||':'||min(e.status) from signing_evidence se join signing_envelopes e on e.id=se.envelope_id where e.deal_id='${K}'`) === "1:voided", "…but the existing signature evidence stays on record (envelope voided, evidence immutable)");
 await mfaRefresh(ada, B, secrets["ada@x.com"]); await open(ada, `/dashboard/deals/${K}/contract`); await see(ada, /Voided/, "agreement shows as voided");
 rec((await ada.locator("main [name=typed_name]").count()) === 0, "no signing form on a voided agreement");
 
