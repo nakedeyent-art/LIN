@@ -198,21 +198,34 @@ Recommended continuation:
 
 The historical portion of `docs/HANDOFF.md` contains old `/home/user/LIN` paths, branch/push statements and Claude harness instructions. The current local status above supersedes those claims; do not copy stale commit trailers or assume the current work was already pushed.
 
-## Status update (Claude continuation, migrations 030-033)
+## Status update (Claude continuation, migrations 030–036)
 
-Done and covered by tests (unit 269, integration 116, browser e2e19 18 checks, 3/3 stable runs):
-- Organization lifecycle (invite expiry/re-invite/revoke, leave, role changes never leave zero owners, archive, sole-owner account deletion promotes or archives).
-- Email outbox with retry/backoff/dedupe; all notices go through it; signing notices enqueue in the signing transaction. Admin shows delivery stats.
-- Fair, progress-making reminder/watchlist jobs with per-item failure isolation.
-- Upload hardening: ClamAV INSTREAM adapter (fail closed), per-athlete and per-recruiter quotas, version/document caps.
-- Deal/signing integrity: voiding a deal voids its live envelope; stale guardian/athlete recipients are re-issued; one live envelope per contract.
-- Data export, DB-backed rate limiting (login/reset/MFA) with TRUST_PROXY handling.
-- Event edit/cancel and guardian consent give/withdraw; moving an event clears consent and notifies the family.
+Branch `codex/security-and-app-improvements`. Every item below is on the branch with tests; nothing is deployed, and no pull request was opened.
 
-NOT done / not verified:
-- Visual signing field placement, accessible preview, Office conversion; private object storage and quarantine states.
-- Multi-athlete attendance editor, venue reuse, stop linkage to contacts/documents/tasks/expenses.
-- Scouting UI completeness; passkeys; real Stripe test mode and real email provider (all mocked).
-- Recent-MFA (10 min) for money/signing is a Codex default and still needs explicit product review.
-- Suites other than e2e19/e2e20 and the vitest suites were not re-run after these changes; e2e4 failures remain unexplained.
-- Nothing deployed. No independent Gemini review has happened (Gemini cannot be run from the cloud session).
+### Product decisions taken by the user (2026-10-11)
+- **Events belong to their organizer.** Only the organizer edits, cancels or changes the attendee list. Families keep attendance and guardian consent for their own athlete. An organizer who is no longer a guardian keeps control of the event but can no longer share it with recruiters or add that athlete.
+- **Recent MFA (10 minutes) is required** to begin and finish signing *and* to create, send, void or decline an agreement, and to generate a deal agreement. This confirms and extends the Codex default; it is no longer an open question.
+- **Event times belong to the venue.** Each event stores an IANA time zone; forms take venue wall-clock time; the schedule shows venue time with a per-event "Show in my time zone" toggle (viewer's browser zone).
+
+### Implemented on this branch
+- Organization lifecycle (invite expiry/re-invite/revoke, leave, co-owners, archive, safe sole-owner deletion). Archived organizations grant nothing anywhere (scouting reports, attachments, seasons included).
+- Email outbox with retry/backoff/dedupe for every notice; signing notices enqueue in the signing transaction. Fixed: a same-day second signature or completion notice is no longer swallowed by dedupe.
+- Fair, progress-making reminder/watchlist jobs; new `upload-scan` job.
+- Uploads: ClamAV INSTREAM adapter (fail closed); per-athlete/recruiter quotas; **private object storage** (S3-compatible, SigV4, server-side only; `OBJECT_STORAGE_*`), and **quarantine** (`UPLOAD_SCAN_MODE=async`: `document_versions.scan_status` pending → clean/infected; pending or infected files are never downloadable, previewable or signable; infected files notify the family; the verdict is immutable).
+- Deal/signing integrity: voiding a deal voids its live envelope; stale guardian/athlete recipients are re-issued; one live envelope per contract; consistent deal→envelope lock order with a deadlock retry; legacy `contract_signatures.signed_pdf_sha256` records the hash of the PDF that was actually signed; a minor cannot start a deal agreement; money is never released while a card dispute is open; Stripe reconcile no longer holds a row lock across the network call.
+- **Visual signing-field placement**: pages rendered with pdf.js, click to place and drag to size; numeric inputs remain for keyboard/screen-reader users.
+- Events: edit/cancel, guardian consent give/withdraw (moving an event clears consent and notifies the family), multi-athlete attendance (add/remove with authority checks), saved-venue reuse, venue time zones.
+- Scouting: observations can be linked to events the family shared with recruiters (name and date only).
+- **Travel stops** carry contacts, linked documents (never identity/tax), tasks and expenses (migration 035); contacts are erased with the account and included in the data export.
+- **Passkeys (WebAuthn)** as an additional second factor (migration 036): added in Settings behind a fresh authenticator code; usable at `/mfa/verify`; counter regression is refused; removing the last passkey never weakens MFA; turning MFA off, an admin reset or account deletion forgets every passkey. Covered end to end with Chromium's virtual authenticator (`npm run test:e2e:passkeys`).
+- Rate limits (login/signup/reset/MFA) with `TRUST_PROXY`; complete personal data export; document sharing only to approved team members; accessibility fixes (alert roles, named buttons).
+
+### Verified (disposable local database only)
+Typecheck clean; unit 278; integration 143 (18 files); browser: e2e6 (83), e2e17 (73), e2e18 (88), e2e19 (24, connected operations/signing/schedule/travel), e2e21 (11, passkeys). See the report in the final session summary for e2e20 and the production build.
+
+### Not done / not verified
+- Office→PDF conversion for signing (PDF only); recruiter-facing scouting comparison/metrics UI beyond what exists.
+- Real Stripe test-mode settlement and a real email provider were **not** exercised (mock Stripe and local mail only); no deployment.
+- The remaining legacy browser suites (e2e1–e2e5, e2e7–e2e16) were not re-run on this branch; e2e4's earlier failures remain unexplained.
+- Object storage was tested against an in-process S3 stand-in, not a real bucket. Quarantine was tested against a clamd stand-in speaking the real INSTREAM protocol, not a real ClamAV.
+- **No independent Gemini review has happened.** A separate Claude read-only review was run; its confirmed findings were fixed (above). Gemini cannot be run from the cloud session; `docs/GEMINI_REVIEW_HANDOFF.md` is ready to paste.

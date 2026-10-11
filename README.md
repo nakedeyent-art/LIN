@@ -239,6 +239,14 @@ curl -fsS -X POST -H "Authorization: Bearer $CRON_SECRET" "https://your-app.exam
 Dates are evaluated in UTC. Running it more often is harmless (idempotent); missing a few days is fine (the 30-day window
 catches up). Add new jobs to `JOBS` in `lib/jobs/runner.ts` — each must be idempotent and safe to retry.
 
+## Storage, scanning and passkeys (added on this branch)
+
+- `UPLOAD_SCANNER=clamav://host:3310` scans uploads (fails closed). `UPLOAD_SCAN_MODE=async` accepts uploads into quarantine; the daily `upload-scan` job releases clean files and quarantines infected ones (never served or signed).
+- `OBJECT_STORAGE_ENDPOINT/BUCKET/ACCESS_KEY/SECRET_KEY` move document bytes to private S3-compatible storage; downloads still stream through authenticated routes. Leave empty to keep files in Postgres.
+- Passkeys: with an authenticator app enrolled, people can add passkeys in Settings (fresh code required) and use them at the second step. Turning two-factor off removes them.
+- Event times are stored with the venue's time zone; the schedule shows venue time and can show the viewer's.
+- Browser suites: `npm run test:e2e` (e2e18), `test:e2e:admin` (e2e17), `test:e2e:settings` (e2e6), `node e2e/e2e19.mjs` (operations, signing, schedule, travel), `test:e2e:limits` (e2e20, start the app with `E2E_TRUST_PROXY=1`), `test:e2e:passkeys` (e2e21).
+
 ## Known gaps (do before real users)
 - Set `APP_URL`, `RESEND_API_KEY` and `MAIL_FROM` for production; in production the app refuses to send without them (dev mode logs emails instead).
 - Guardian links are one-to-one by email; there is no flow yet to add a second guardian, revoke a guardian, or

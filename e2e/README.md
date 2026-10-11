@@ -23,7 +23,7 @@ npm run test:e2e:settings
 npm run test:e2e:operations
 ```
 
-These run e2e18 (ordinary MFA), e2e17 (admin MFA), e2e6 (settings/deletion), and e2e19 (connected operations/signing). The app defaults to localhost:3113 and writes disposable development mail to `.test-output/mail.log`. `E2E_BASE_URL`, `E2E_MAIL_LOG` and `E2E_CHROMIUM_PATH` can override those defaults. `psql` must be on PATH. The runner clears real payment/mail credentials. MFA uses the development fallback key; never use it in production.
+These run e2e18 (ordinary MFA), e2e17 (admin MFA), e2e6 (settings/deletion), e2e19 (connected operations, signing, schedule, travel), e2e20 (rate limits; start the app with `E2E_TRUST_PROXY=1`) and e2e21 (passkeys, via Chromium's virtual authenticator). Do not edit project files while a browser suite runs against `next dev`: a hot reload mid-test remounts client forms and produces false failures. The app defaults to localhost:3113 and writes disposable development mail to `.test-output/mail.log`. `E2E_BASE_URL`, `E2E_MAIL_LOG` and `E2E_CHROMIUM_PATH` can override those defaults. `psql` must be on PATH. The runner clears real payment/mail credentials. MFA uses the development fallback key; never use it in production.
 
 Playwright is now a project dependency. The older cloud sandbox can still use `ln -sfn /opt/node-tools/node_modules e2e/node_modules` if needed; normal local installs do not need that symlink.
 
