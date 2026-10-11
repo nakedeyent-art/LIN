@@ -4,6 +4,7 @@ import { chromium } from "playwright";
 import { readFileSync } from "node:fs";
 import { execSync, spawnSync } from "node:child_process";
 import { createHmac } from "node:crypto";
+import { mfaEnrollAt } from "./mfa-helper.mjs";
 const B = _rt.B, M = "http://localhost:4010", WH = "whsec_test_mock_secret_0123456789", CRON = "test-cron-secret-0123456789abcdef";
 const br = await chromium.launch(_rt.browserOptions);
 let fails = 0, total = 0;
@@ -41,11 +42,7 @@ const SAM = () => id("sam@x.com");
 const mkDeal = (athlete, title, cents = 150000, status = "offered") => sql(`insert into deals(athlete_id,counterparty_id,title,amount_cents,deliverables,status,attested_at,expires_at) values ('${id(athlete)}','${SAM()}','${title}',${cents},'Two Instagram posts and one in-store appearance in November.','${status}',now(), now()+interval '10 days') returning id`);
 const dstate = (d) => sql(`select status from deals where id='${d}'`);
 const pstate = (d) => sql(`select coalesce(string_agg(status,',' order by created_at),'none') from deal_payments where deal_id='${d}'`);
-async function signAs(p, dealId, name) {
-  await open(p, `/dashboard/deals/${dealId}/contract`);
-  await p.fill("[name=typed_name]", name); await p.check("[name=consent]");
-  await p.locator("main button:has-text('Sign agreement')").click(); await settle(p);
-}
+const signAs = (p, dealId, name) => _rt.signDealViaForg3(p, `${B}/dashboard/deals/${dealId}`, name);   // Forg3 replaces the typed-name legacy signing
 const completeOnboarding = (email) => mock(`/_admin/complete-onboarding/${sql(`select stripe_account_id from payout_accounts where user_id='${id(email)}'`)}`, "POST");
 async function setupPayouts(p, email) {   // clicks "Set up payouts" (redirects to the mock's onboarding URL), then finishes onboarding there and returns
   await open(p, "/dashboard/deals"); await p.locator("main button:has-text('payout')").first().click();
@@ -78,23 +75,19 @@ rec(sql(`select expires_at > now() + interval '13 days' from deals where id='${A
 
 // signing rules
 await open(sam, `/dashboard/deals/${A}`); await notSee(sam, /Fund this deal/, "can't fund before the agreement is signed");
-await open(ada, `/dashboard/deals/${A}/contract`);
-await ada.fill("[name=typed_name]", "Someone Else"); await ada.check("[name=consent]"); await ada.locator("main button:has-text('Sign agreement')").click(); await settle(ada);
-await see(ada, /exactly as it appears on your account/, "wrong typed name is refused");
-await ada.fill("[name=typed_name]", "Ada Adult"); await ada.uncheck("[name=consent]"); await ada.locator("main button:has-text('Sign agreement')").click(); await settle(ada);
-await see(ada, /Tick the box/, "signing without e-sign consent is refused");
-rec(sql(`select count(*) from contract_signatures`) === "0", "no signature recorded by the refused attempts");
-await signAs(ada, A, "  ada   ADULT ");
-await see(ada, /Signed\. Waiting for the other side/, "athlete signs (name matched case/spacing-insensitively)");
-rec(sql(`select signer_role||':'||typed_name||':'||(document_sha256=(select sha256 from contracts where deal_id='${A}'))||':'||consent_version from contract_signatures`) === "athlete:ada ADULT:true:esign-v1", "signature binds to the exact document hash with consent version", sql("select * from contract_signatures"));
-rec(dstate(A) === "awaiting_signature", "one signature doesn't make the deal active");
-await open(ada, `/dashboard/deals/${A}/contract`); rec((await ada.locator("main [name=typed_name]").count()) === 0, "no second signing form for the same person");
-await open(eve, `/dashboard/deals/${A}/contract`); rec((await eve.goto(`${B}/dashboard/deals/${A}/contract`)).status() === 404, "an outsider gets 404 for the agreement");
+// Signing goes through Forg3 (generated from the frozen contract); recipients sign in order — sponsor, then athlete — and each needs a recent second factor.
+await mfaEnrollAt(ada, B, OLD); await mfaEnrollAt(sam, B, OLD);
 await signAs(sam, A, "Sam Sponsor");
-await see(sam, /fully executed and the deal is active/, "sponsor signs → fully executed");
+rec(dstate(A) === "awaiting_signature", "one signature doesn't make the deal active");
+rec(sql(`select count(*) from signing_recipients r join signing_envelopes e on e.id=r.envelope_id where e.deal_id='${A}' and r.status='signed'`) === "1", "the sponsor's signature is recorded on the envelope");
+await open(sam, `/dashboard/deals/${A}/contract`); await sam.locator("main a:has-text('Open Forg3 signing workspace')").click(); await sam.waitForLoadState("domcontentloaded");
+rec((await sam.getByRole("button", { name: "Begin signing" }).count()) === 0, "no second signing for the same person");
+await open(eve, `/dashboard/deals/${A}/contract`); rec((await eve.goto(`${B}/dashboard/deals/${A}/contract`)).status() === 404, "an outsider gets 404 for the agreement");
+await signAs(ada, A, "Ada Adult");
 rec(dstate(A) === "active" && sql(`select (executed_at is not null)::text from contracts where deal_id='${A}'`) === "true", "deal becomes active only now, contract executed");
+rec(sql(`select count(*)||':'||count(*) filter (where signed_pdf_sha256 is not null)||':'||count(*) filter (where document_sha256=(select sha256 from contracts where deal_id='${A}')) from contract_signatures`) === "2:2:2", "legacy evidence carries both the contract-text hash and the signed-PDF hash", sql("select signer_role,typed_name from contract_signatures"));
 rec(sql(`select expires_at is null from deals where id='${A}'`) === "t", "expiry cleared on activation");
-rec(sql(`select string_agg(action||':'||to_status, ',' order by created_at, id) from deal_events where deal_id='${A}'`) === "accept:awaiting_signature,sign:awaiting_signature,sign:active", "audit trail: accept, sign, sign→active");
+rec(sql(`select string_agg(action||':'||to_status, ',' order by created_at, id) from deal_events where deal_id='${A}'`) === "accept:awaiting_signature,sign:active", "audit trail: accept, sign→active");
 
 // evidence is immutable at the database level
 const dbErr = _rt.dbErr;

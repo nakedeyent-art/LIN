@@ -79,20 +79,7 @@ check("no deal rows yet", sql("select count(*) from deals"), "0");
 
 // ---- minor path: offered -> athlete accepts -> guardian_review -> guardian approves -> awaiting_signature -> both sign -> active -> completed ----
 // New deals sign through Forg3: the first party generates the agreement from the frozen contract, each recipient signs in order (sponsor, then the athlete side).
-async function signAs(p, dealUrl, name) {
-  // Element waits rather than networkidle: the signing workspace keeps a PDF preview and polling alive, so "idle" may never come.
-  await p.goto(dealUrl + "/contract", { waitUntil: "domcontentloaded" });
-  const gen = p.locator("main button:has-text('Review and sign with Forg3')"), open = p.locator("main a:has-text('Open Forg3 signing workspace')");
-  await Promise.race([gen.waitFor({ timeout: 30000 }), open.waitFor({ timeout: 30000 })]);
-  if (await gen.count()) await Promise.all([p.waitForURL(/\/dashboard\/signing\//, { timeout: 60000 }), gen.click()]);
-  else await Promise.all([p.waitForURL(/\/dashboard\/signing\//, { timeout: 60000 }), open.click()]);
-  const begin = p.getByRole("button", { name: "Begin signing" }); await begin.waitFor({ timeout: 30000 }); await begin.click();
-  await p.getByRole("heading", { name: "Complete your fields" }).waitFor({ timeout: 60000 });
-  await p.locator("input[name^=field_]").fill(name); await p.locator("[name=consent]").check();
-  await p.getByRole("button", { name: "Sign agreement", exact: true }).click();
-  await p.getByText(/signed|completed/i).first().waitFor({ timeout: 60000 }).catch(() => {});
-  await p.waitForTimeout(1000);
-}
+const signAs = (p, dealUrl, name) => _rt.signDealViaForg3(p, dealUrl, name);
 const o1 = await offer(sponsor, jid, { title: "Sneaker ambassador" });
 check("offer created", o1.url, /\/dashboard\/deals\/[0-9a-f-]{36}\?msg=/);
 const dealUrl = o1.url.split("?")[0];

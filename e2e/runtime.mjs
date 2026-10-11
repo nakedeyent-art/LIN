@@ -33,3 +33,22 @@ export async function submitAndWait(page, target) {
   }
   // Server action streams can stay open; callers assert the resulting UI state.
 }
+
+/**
+ * Signs a deal's agreement through Forg3 as the given page's user: generates the agreement from the frozen contract when nobody has yet,
+ * otherwise opens the live envelope; then begins signing, fills the signature field and submits. Recipients sign in order (sponsor first,
+ * then the athlete side), and every step needs a recent second factor on that session (see mfa-helper.mjs → mfaEnrollAt).
+ * Element waits rather than networkidle: the workspace keeps a PDF preview alive.
+ */
+export async function signDealViaForg3(p, dealUrl, name) {
+  await p.goto(dealUrl + "/contract", { waitUntil: "domcontentloaded" });
+  const gen = p.locator("main button:has-text('Review and sign with Forg3')"), open = p.locator("main a:has-text('Open Forg3 signing workspace')");
+  await Promise.race([gen.waitFor({ timeout: 30000 }), open.waitFor({ timeout: 30000 })]);
+  await Promise.all([p.waitForURL(/\/dashboard\/signing\//, { timeout: 60000 }), (await gen.count()) ? gen.click() : open.click()]);
+  const begin = p.getByRole("button", { name: "Begin signing" }); await begin.waitFor({ timeout: 30000 }); await begin.click();
+  await p.getByRole("heading", { name: "Complete your fields" }).waitFor({ timeout: 60000 });
+  await p.locator("input[name^=field_]").fill(name); await p.locator("[name=consent]").check();
+  await p.getByRole("button", { name: "Sign agreement", exact: true }).click();
+  await p.getByText(/signed|completed/i).first().waitFor({ timeout: 60000 }).catch(() => {});
+  await p.waitForTimeout(1000);
+}
