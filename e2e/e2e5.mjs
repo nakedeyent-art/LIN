@@ -70,7 +70,7 @@ await login(victim, "ann@x.com", OLD); await see(victim, /Too many attempts/, "a
 sql("update users set email_verified_at = NULL where email='ann@x.com'");
 await fill(lp, NEW);
 await see(lp, /Password changed/, "reset succeeds → login page with confirmation");
-rec(sql("select failed_logins||':'||(locked_until is null) from users where email='ann@x.com'") === "0:t", "lockout cleared by reset", sql("select failed_logins||':'||locked_until from users where email='ann@x.com'"));
+rec(sql("select failed_logins||':'||(locked_until is null) from users where email='ann@x.com'") === "0:t", "lockout cleared by reset", sql("select failed_logins::text||':'||coalesce(locked_until::text,'null')||' rl='||(select coalesce(string_agg(key||'='||hits,','),'') from rate_limits) from users where email='ann@x.com'"));
 rec(sql("select email_verified_at is not null from users where email='ann@x.com'") === "t", "reset proves mailbox control → email verified");
 rec(sql("select count(*) from sessions s join users u on u.id=s.user_id where u.email='ann@x.com'") === "0", "all of ann's sessions were ended");
 await live.goto(B + "/dashboard"); await settle(live);

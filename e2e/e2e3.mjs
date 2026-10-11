@@ -78,7 +78,16 @@ check("offer to unlisted athlete blocked (404 page)", (await sponsor.goto(`${B}/
 check("no deal rows yet", sql("select count(*) from deals"), "0");
 
 // ---- minor path: offered -> athlete accepts -> guardian_review -> guardian approves -> awaiting_signature -> both sign -> active -> completed ----
-async function signAs(p, dealUrl, name) { await p.goto(dealUrl + "/contract"); await settle(p); await p.fill("[name=typed_name]", name); await p.check("[name=consent]"); await p.locator("main button:has-text('Sign agreement')").click(); await settle(p); }
+// New deals sign through Forg3: the first party generates the agreement from the frozen contract, each recipient signs in order (sponsor, then the athlete side).
+async function signAs(p, dealUrl, name) {
+  await p.goto(dealUrl + "/contract"); await settle(p);
+  if (await p.locator("main button:has-text('Review and sign with Forg3')").count()) { await p.locator("main button:has-text('Review and sign with Forg3')").click(); await settle(p); }
+  else { await p.locator("main a:has-text('Open Forg3 signing workspace')").click(); await settle(p); }
+  await p.locator("main button:has-text('Begin signing')").click(); await settle(p);
+  await p.getByRole("heading", { name: "Complete your fields" }).waitFor();
+  await p.locator("input[name^=field_]").fill(name); await p.locator("[name=consent]").check();
+  await p.getByRole("button", { name: "Sign agreement", exact: true }).click(); await settle(p);
+}
 const o1 = await offer(sponsor, jid, { title: "Sneaker ambassador" });
 check("offer created", o1.url, /\/dashboard\/deals\/[0-9a-f-]{36}\?msg=/);
 const dealUrl = o1.url.split("?")[0];
@@ -119,12 +128,13 @@ check("guardian sees full athlete name", (await text(maria)).includes("Jordan Re
 await maria.click("button:has-text('Approve (guardian)')"); await settle(maria);
 check("guardian approve -> awaiting_signature (not active)", sql("select status from deals"), "awaiting_signature");
 check("guardian_approved_by recorded", sql("select u.email from deals d join users u on u.id=d.guardian_approved_by"), "maria@x.com");
-await signAs(maria, dealUrl, "Maria Reyes"); check("one signature: still awaiting_signature", sql("select status from deals"), "awaiting_signature");
-await mfaEnrollAt(sponsor, B); await signAs(sponsor, dealUrl, "Sam Sponsor"); check("guardian + sponsor signed -> active", sql("select status from deals"), "active");
+await mfaEnrollAt(sponsor, B); await signAs(sponsor, dealUrl, "Sam Sponsor"); check("one signature: still awaiting_signature", sql("select status from deals"), "awaiting_signature");
+await signAs(maria, dealUrl, "Maria Reyes"); check("sponsor + guardian signed -> active", sql("select status from deals"), "active");
+check("legacy evidence names the signed PDF", sql("select count(*) from contract_signatures where signed_pdf_sha256 is not null"), "2");
 await sponsor.goto(dealUrl); await settle(sponsor);
 await sponsor.click("button:has-text('Mark completed')"); await settle(sponsor);
 check("sponsor completes active deal", sql("select status from deals"), "completed");
-check("audit trail complete", sql("select string_agg(action||':'||to_status, ',' order by created_at, id) from deal_events"), "offer:offered,accept:guardian_review,approve:awaiting_signature,sign:awaiting_signature,sign:active,complete:completed");
+check("audit trail complete", sql("select string_agg(action||':'||to_status, ',' order by created_at, id) from deal_events"), "offer:offered,accept:guardian_review,approve:awaiting_signature,sign:active,complete:completed");
 
 // ---- adult path + concurrency + expiry + cap ----
 sql("truncate deals cascade");
