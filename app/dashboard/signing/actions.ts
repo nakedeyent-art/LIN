@@ -53,6 +53,10 @@ export async function endEnvelope(form:FormData) {
 export async function generateDealAgreement(form:FormData) {
  const s=await requireUser(),deal=String(form.get('deal_id')??'');
  if(!validId(deal))redirect('/dashboard/deals');
+ // Standing first: a minor athlete is told a guardian must start the agreement rather than being sent to set up two-factor.
+ const {db}=await import('@/lib/db');
+ const minorHere=(await db().query("SELECT 1 FROM deals d JOIN athlete_profiles p ON p.user_id=d.athlete_id WHERE d.id=$1 AND d.athlete_id=$2 AND p.birth_date>CURRENT_DATE-INTERVAL '18 years'",[deal,s.userId])).rowCount;
+ if(minorHere)redirect(`/dashboard/deals/${deal}/contract?error=${encodeURIComponent('A guardian must start the agreement for an athlete under 18.')}`);
  await requireRecentMfa(s,`/dashboard/deals/${deal}/contract`);
  const {prepareDealSigning}=await import('@/lib/deal-signing');
  let id:string;

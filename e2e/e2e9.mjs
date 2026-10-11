@@ -76,7 +76,7 @@ rec(sql(`select expires_at > now() + interval '13 days' from deals where id='${A
 // signing rules
 await open(sam, `/dashboard/deals/${A}`); await notSee(sam, /Fund this deal/, "can't fund before the agreement is signed");
 // Signing goes through Forg3 (generated from the frozen contract); recipients sign in order — sponsor, then athlete — and each needs a recent second factor.
-const adaSecret = await mfaEnrollAt(ada, B, OLD), samSecret = await mfaEnrollAt(sam, B, OLD); void adaSecret;
+const secrets = {}; secrets["ada@x.com"] = await mfaEnrollAt(ada, B, OLD); const samSecret = await mfaEnrollAt(sam, B, OLD); secrets["sam@x.com"] = samSecret;
 await signAs(sam, A, "Sam Sponsor");
 rec(dstate(A) === "awaiting_signature", "one signature doesn't make the deal active");
 rec(sql(`select count(*) from signing_recipients r join signing_envelopes e on e.id=r.envelope_id where e.deal_id='${A}' and r.status='signed'`) === "1", "the sponsor's signature is recorded on the envelope");
@@ -161,8 +161,11 @@ rec(sql(`select (select body from contracts where deal_id='${A}') like '%Ada Adu
 async function fullFund(athletePage, athleteEmail, title, cents = 150000) {
   const d = mkDeal(athleteEmail, title, cents);
   await open(athletePage, `/dashboard/deals/${d}`); await click(athletePage, "Accept");
-  await signAs(athletePage, d, sql(`select full_name from users where email='${athleteEmail}'`)); await signAs(sam, d, "Sam Sponsor");
-  await open(sam, `/dashboard/deals/${d}`); await sam.locator("main button:has-text('Fund this deal')").click(); await sam.waitForURL(/localhost:4010/, { timeout: 30000 }).catch(() => {});
+  // Forg3 order: sponsor first, then the athlete; both need a fresh second factor (long suite: refresh rather than assume).
+  secrets[athleteEmail] ??= await mfaEnrollAt(athletePage, B, OLD);
+  await mfaRefresh(sam, B, samSecret); await signAs(sam, d, "Sam Sponsor");
+  await mfaRefresh(athletePage, B, secrets[athleteEmail]); await signAs(athletePage, d, sql(`select full_name from users where email='${athleteEmail}'`));
+  await mfaRefresh(sam, B, samSecret); await open(sam, `/dashboard/deals/${d}`); await sam.locator("main button:has-text('Fund this deal')").click(); await sam.waitForURL(/localhost:4010/, { timeout: 30000 }).catch(() => {});
   const sid = sql(`select stripe_checkout_session_id from deal_payments where deal_id='${d}'`);
   const paidSession = await mock(`/_admin/pay/${sid}`, "POST");
   await hook("checkout.session.completed", paidSession);
