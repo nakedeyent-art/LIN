@@ -38,3 +38,22 @@ This is a substantial local implementation, not a claim of complete production r
 - Provider test-mode verification, specialist contract/eligibility review and the remaining legacy browser suites are separate release work.
 
 See `GEMINI_REVIEW_HANDOFF.md` for independent review instructions and `../security_best_practices_report.md` for security changes and verification limits.
+
+## Status update (Claude continuation, migrations 030-033)
+
+Done and covered by tests (unit 269, integration 116, browser e2e19 18 checks, 3/3 stable runs):
+- Organization lifecycle (invite expiry/re-invite/revoke, leave, role changes never leave zero owners, archive, sole-owner account deletion promotes or archives).
+- Email outbox with retry/backoff/dedupe; all notices go through it; signing notices enqueue in the signing transaction. Admin shows delivery stats.
+- Fair, progress-making reminder/watchlist jobs with per-item failure isolation.
+- Upload hardening: ClamAV INSTREAM adapter (fail closed), per-athlete and per-recruiter quotas, version/document caps.
+- Deal/signing integrity: voiding a deal voids its live envelope; stale guardian/athlete recipients are re-issued; one live envelope per contract.
+- Data export, DB-backed rate limiting (login/reset/MFA) with TRUST_PROXY handling.
+- Event edit/cancel and guardian consent give/withdraw; moving an event clears consent and notifies the family.
+
+NOT done / not verified:
+- Visual signing field placement, accessible preview, Office conversion; private object storage and quarantine states.
+- Multi-athlete attendance editor, venue reuse, stop linkage to contacts/documents/tasks/expenses.
+- Scouting UI completeness; passkeys; real Stripe test mode and real email provider (all mocked).
+- Recent-MFA (10 min) for money/signing is a Codex default and still needs explicit product review.
+- Suites other than e2e19/e2e20 and the vitest suites were not re-run after these changes; e2e4 failures remain unexplained.
+- Nothing deployed. No independent Gemini review has happened (Gemini cannot be run from the cloud session).

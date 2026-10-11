@@ -197,3 +197,22 @@ Recommended continuation:
 7. Report what is implemented, what remains, what passed, what was mocked and whether anything was committed/pushed/deployed. Do not claim completion solely because compilation passes.
 
 The historical portion of `docs/HANDOFF.md` contains old `/home/user/LIN` paths, branch/push statements and Claude harness instructions. The current local status above supersedes those claims; do not copy stale commit trailers or assume the current work was already pushed.
+
+## Status update (Claude continuation, migrations 030-033)
+
+Done and covered by tests (unit 269, integration 116, browser e2e19 18 checks, 3/3 stable runs):
+- Organization lifecycle (invite expiry/re-invite/revoke, leave, role changes never leave zero owners, archive, sole-owner account deletion promotes or archives).
+- Email outbox with retry/backoff/dedupe; all notices go through it; signing notices enqueue in the signing transaction. Admin shows delivery stats.
+- Fair, progress-making reminder/watchlist jobs with per-item failure isolation.
+- Upload hardening: ClamAV INSTREAM adapter (fail closed), per-athlete and per-recruiter quotas, version/document caps.
+- Deal/signing integrity: voiding a deal voids its live envelope; stale guardian/athlete recipients are re-issued; one live envelope per contract.
+- Data export, DB-backed rate limiting (login/reset/MFA) with TRUST_PROXY handling.
+- Event edit/cancel and guardian consent give/withdraw; moving an event clears consent and notifies the family.
+
+NOT done / not verified:
+- Visual signing field placement, accessible preview, Office conversion; private object storage and quarantine states.
+- Multi-athlete attendance editor, venue reuse, stop linkage to contacts/documents/tasks/expenses.
+- Scouting UI completeness; passkeys; real Stripe test mode and real email provider (all mocked).
+- Recent-MFA (10 min) for money/signing is a Codex default and still needs explicit product review.
+- Suites other than e2e19/e2e20 and the vitest suites were not re-run after these changes; e2e4 failures remain unexplained.
+- Nothing deployed. No independent Gemini review has happened (Gemini cannot be run from the cloud session).
