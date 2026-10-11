@@ -1,5 +1,6 @@
 "use server";
 import { redirect } from "next/navigation";
+import { forgetPasskeys } from "@/lib/passkeys";
 import { db } from "@/lib/db";
 import { requireAdmin, requireRecentMfa } from "@/lib/session";
 import { checkPassword } from "@/lib/reauth";
@@ -54,6 +55,7 @@ export async function adminUserAction(formData: FormData) {
       await client.query("UPDATE users SET mfa_reenrollment_required=TRUE WHERE id=$1", [id]);
       await client.query("DELETE FROM user_recovery_codes WHERE user_id=$1", [id]);
       await client.query("DELETE FROM user_mfa WHERE user_id=$1", [id]);
+      await forgetPasskeys(client, id);
       await client.query("DELETE FROM sessions WHERE user_id=$1", [id]);
       await client.query("INSERT INTO security_events(user_id, action) VALUES ($1,'mfa_reset_by_admin')", [id]);
       msg = "Two-factor removed and the person signed out everywhere. They must set it up again before using their account.";

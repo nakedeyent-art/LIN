@@ -10,6 +10,7 @@ export async function eraseOperations(c:PoolClient,id:string) {
  await deleteStoredObjects(stored);   // object-storage bytes go with the tombstone (best effort; the rows no longer point at them)
  await c.query("UPDATE athlete_documents SET title='Removed document',folder='',tags='{}',expires_on=NULL,access_scope='family',status='archived' WHERE athlete_id=$1 AND status<>'completed' AND NOT EXISTS(SELECT 1 FROM signing_envelopes e JOIN signing_evidence se ON se.envelope_id=e.id WHERE e.document_id=athlete_documents.id)",[id]);
  await c.query('DELETE FROM document_grants WHERE user_id=$1 OR document_id IN (SELECT id FROM athlete_documents WHERE athlete_id=$1)',[id]);
+ await c.query("DELETE FROM travel_stop_contacts WHERE stop_id IN (SELECT s.id FROM travel_stops s JOIN travel_routes r ON r.id=s.route_id WHERE r.athlete_id=$1)",[id]);   // third parties' details go with the trip
  await c.query("UPDATE travel_stops SET name='Removed stop',details='',hotel='',contact='' WHERE route_id IN (SELECT id FROM travel_routes WHERE athlete_id=$1)",[id]);
  await c.query("UPDATE travel_routes SET name='Removed route' WHERE athlete_id=$1",[id]);
  await c.query("UPDATE operational_tasks SET title='Removed task',status='cancelled' WHERE athlete_id=$1 OR created_by=$1 OR assigned_to=$1",[id]);

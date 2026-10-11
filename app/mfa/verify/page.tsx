@@ -5,6 +5,9 @@ import { MFA_SENSITIVE_MINUTES, mfaStatus } from "@/lib/mfa";
 import { safeNext } from "@/lib/redirect";
 import { logout } from "../../login/actions";
 import { verifyMfa } from "../actions";
+import { beginPasskeyVerify, finishPasskeyVerify } from "../passkey-actions";
+import { PasskeyVerify } from "@/components/passkey-ui";
+import { hasPasskey } from "@/lib/passkeys";
 
 export const metadata: Metadata = { title: "Two-factor check", robots: { index: false } };
 
@@ -15,6 +18,7 @@ export default async function MfaVerify({ searchParams }: { searchParams: Promis
   if (!m.enrolled || s.mfaReenrollmentRequired) redirect(`/mfa/setup?next=${encodeURIComponent(safeNext(next))}${sensitive === "1" ? "&sensitive=1" : ""}`);
   const home = s.isAdmin ? "/admin" : "/dashboard";
   if (s.isAdmin || sensitive === "1" ? m.verifiedFresh : m.verifiedEver) redirect(safeNext(next, home));
+  const passkey = await hasPasskey(s.userId);
   return (
     <div className="center">
       <h1>Two-factor check</h1>
@@ -27,6 +31,7 @@ export default async function MfaVerify({ searchParams }: { searchParams: Promis
       <p><label>Authenticator or recovery code<input name="code" autoComplete="one-time-code" inputMode="text" maxLength={16} placeholder="123456 or recovery code" required autoFocus /></label></p>
       <button className="btn" type="submit">Verify</button>
       </form>
+      {passkey && <PasskeyVerify begin={beginPasskeyVerify} finish={finishPasskeyVerify} next={safeNext(next, home)} />}
       <p className="muted">{s.isAdmin ? "Admin pages ask again after 8 hours, and every new sign-in asks once." : "Every new sign-in asks once."}</p>
       <form action={logout} style={{ marginTop: 12 }}><button className="btn ghost" type="submit">Log out</button></form>
     </div>

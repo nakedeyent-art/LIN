@@ -8,6 +8,9 @@ import Link from "next/link";
 import { CodesForm } from "@/components/mfa-ui";
 import { isEnrolled, recoveryRemaining, SECURITY_LABEL, type SecurityAction } from "@/lib/mfa";
 import { disableMyMfa, regenerateMyCodes } from "./mfa-actions";
+import { beginPasskey, finishPasskey, removeMyPasskey } from "./passkey-actions";
+import { AddPasskey } from "@/components/passkey-ui";
+import { listPasskeys } from "@/lib/passkeys";
 import {
   cancelEmailChange, changePassword, deleteAccount, requestEmailChange, signOutOthers, updateEmailPrefs, updateProfile,
 } from "./actions";
@@ -28,6 +31,7 @@ export default async function Settings({ searchParams }: { searchParams: Promise
   const pref = prefs.rows[0];
   const mfaOn = await isEnrolled(s.userId);
   const codesLeft = mfaOn ? await recoveryRemaining(s.userId) : 0;
+  const passkeys = mfaOn ? await listPasskeys(s.userId) : [];
   const events = (await pool.query("SELECT action, created_at FROM security_events WHERE user_id=$1 ORDER BY id DESC LIMIT 8", [s.userId])).rows as { action: SecurityAction; created_at: Date }[];
   const a = prof.rows[0], change = pending.rows[0];
   return (
@@ -97,6 +101,11 @@ export default async function Settings({ searchParams }: { searchParams: Promise
                     <label>Your password<input type="password" name="password" placeholder="Your password" autoComplete="current-password" required /></label>
                     <button className="btn ghost" type="submit">Turn off</button>
                   </form></details>)}
+              <h4>Passkeys</h4>
+              <p className="muted">A passkey (Face ID, Touch ID, Windows Hello or a security key) can pass the two-factor check instead of a code. Your authenticator app stays on and keeps your recovery codes.</p>
+              {passkeys.length > 0 && <ul className="list">{passkeys.map((k) => <li key={k.id}>{k.name} · added {fmt(k.created_at)}{k.last_used_at ? ` · last used ${fmt(k.last_used_at)}` : ""}{" "}
+                <form action={removeMyPasskey} style={{ display: "inline" }}><input type="hidden" name="passkey_id" value={k.id} /><button className="btn ghost" type="submit" aria-label={`Remove passkey ${k.name}`}>Remove</button></form></li>)}</ul>}
+              <AddPasskey begin={beginPasskey} finish={finishPasskey} />
               <p className="muted">Lost your phone and your recovery codes? Contact LIN support. After checking your identity, they can reset it; you must set it up again before accessing your account.</p>
             </>
           ) : (

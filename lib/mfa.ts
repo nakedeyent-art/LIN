@@ -1,4 +1,5 @@
 import { db } from "./db";
+import { forgetPasskeys } from "./passkeys";
 import { open, seal } from "./secretbox";
 import { newSecret, verifyTotp } from "./totp";
 import { hashRecovery, looksLikeRecovery, newRecoveryCodes } from "./recovery";
@@ -156,6 +157,7 @@ export async function disableMfa(userId: string, input: string, tokenHash: strin
     await q("DELETE FROM sessions WHERE user_id=$1 AND token_hash<>$2", [userId, tokenHash]);
     await q("DELETE FROM user_recovery_codes WHERE user_id=$1", [userId]);
     await q("DELETE FROM user_mfa WHERE user_id=$1", [userId]);
+    await forgetPasskeys({ query: q }, userId);   // a passkey rests on the enrolment; it goes with it
     await q("INSERT INTO security_events(user_id, action) VALUES ($1,'mfa_disabled')", [userId]);
     return { ok: true as const };
   });
@@ -166,11 +168,12 @@ export async function isEnrolled(userId: string): Promise<boolean> {
   return !!(await db().query("SELECT 1 FROM user_mfa WHERE user_id=$1 AND enabled_at IS NOT NULL", [userId])).rowCount;
 }
 
-export type SecurityAction = "mfa_enabled" | "mfa_disabled" | "mfa_recovery_used" | "mfa_codes_regenerated" | "mfa_reset_by_admin" | "mfa_locked";
+export type SecurityAction = "mfa_enabled" | "mfa_disabled" | "mfa_recovery_used" | "mfa_codes_regenerated" | "mfa_reset_by_admin" | "mfa_locked" | "passkey_added" | "passkey_removed" | "passkey_counter_rejected" | "mfa_passkey_verified";
 export async function securityEvent(userId: string, action: SecurityAction): Promise<void> {
   await db().query("INSERT INTO security_events(user_id, action) VALUES ($1,$2)", [userId, action]);
 }
 export const SECURITY_LABEL: Record<SecurityAction, string> = {
   mfa_enabled: "Two-factor turned on", mfa_disabled: "Two-factor turned off", mfa_recovery_used: "Signed in with a recovery code",
   mfa_codes_regenerated: "New recovery codes created", mfa_reset_by_admin: "Two-factor removed by LIN support", mfa_locked: "Two-factor locked after wrong codes",
+  passkey_added: "Passkey added", passkey_removed: "Passkey removed", passkey_counter_rejected: "A passkey was refused (possible clone)", mfa_passkey_verified: "Second step passed with a passkey",
 };

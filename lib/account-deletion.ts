@@ -54,6 +54,8 @@ export async function purgeAndAnonymize(client: PoolClient, id: string, email: s
   await run("DELETE FROM notifications WHERE user_id=$1");
   await run("DELETE FROM user_recovery_codes WHERE user_id=$1");
   await run("DELETE FROM user_mfa WHERE user_id=$1");
+  await run("DELETE FROM user_passkeys WHERE user_id=$1");
+  await run("DELETE FROM webauthn_challenges WHERE user_id=$1");
   await run("DELETE FROM security_events WHERE user_id=$1");
   await run("DELETE FROM news_prefs WHERE user_id=$1");
   // Social: posts and comments are blanked (the rows stay so reports and threads keep their shape); pictures, likes, follows and status go.

@@ -27,6 +27,8 @@ export async function buildExport(userId: string) {
     operationalExpenses: await q("SELECT id,description,amount_cents,currency,status,event_id,stop_id FROM operational_expenses WHERE athlete_id=$1"),
     travelRoutes: await q("SELECT id,name,created_at FROM travel_routes WHERE athlete_id=$1"),
     travelStops: await q("SELECT s.* FROM travel_stops s JOIN travel_routes r ON r.id=s.route_id WHERE r.athlete_id=$1"),
+    travelStopContacts: await q("SELECT c.stop_id,c.name,c.role,c.phone,c.email,c.notes FROM travel_stop_contacts c JOIN travel_stops s ON s.id=c.stop_id JOIN travel_routes r ON r.id=s.route_id WHERE r.athlete_id=$1"),
+    travelStopDocuments: await q("SELECT l.stop_id,l.document_id FROM travel_stop_documents l JOIN travel_stops s ON s.id=l.stop_id JOIN travel_routes r ON r.id=s.route_id WHERE r.athlete_id=$1"),
     scoutingReportsAuthored: await q("SELECT * FROM scouting_reports WHERE author_id=$1"),
     recruitingBoard: await q("SELECT athlete_id, stage, updated_at FROM recruiting_board WHERE recruiter_id=$1"),
     // Added: the rest of what the app stores about a person.
