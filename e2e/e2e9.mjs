@@ -80,7 +80,7 @@ const secrets = {}; secrets["ada@x.com"] = await mfaEnrollAt(ada, B, OLD); const
 await signAs(sam, A, "Sam Sponsor");
 rec(dstate(A) === "awaiting_signature", "one signature doesn't make the deal active");
 rec(sql(`select count(*) from signing_recipients r join signing_envelopes e on e.id=r.envelope_id where e.deal_id='${A}' and r.status='signed'`) === "1", "the sponsor's signature is recorded on the envelope");
-await open(sam, `/dashboard/deals/${A}/contract`); await sam.locator("main a:has-text('Open Forg3 signing workspace')").click(); await sam.waitForLoadState("domcontentloaded");
+await mfaRefresh(sam, B, samSecret); await open(sam, `/dashboard/deals/${A}/contract`); await sam.locator("main a:has-text('Open Forg3 signing workspace')").click(); await sam.waitForLoadState("domcontentloaded");
 rec((await sam.getByRole("button", { name: "Begin signing" }).count()) === 0, "no second signing for the same person");
 await open(eve, `/dashboard/deals/${A}/contract`); rec((await eve.goto(`${B}/dashboard/deals/${A}/contract`)).status() === 404, "an outsider gets 404 for the agreement");
 await signAs(ada, A, "Ada Adult");
@@ -99,21 +99,21 @@ rec(/immutable/.test(dbErr(`update contract_signatures set typed_name='Forged Na
 rec(/append-only/.test(dbErr(`delete from contract_signatures`)), "DB refuses to delete signatures");
 
 // payouts → funding
-await open(sam, `/dashboard/deals/${A}`); await see(sam, /hasn't finished payout setup|choose who receives|payout setup/, "sponsor is told the payee isn't ready (no Fund button)");
+await mfaRefresh(sam, B, samSecret); await open(sam, `/dashboard/deals/${A}`); await see(sam, /hasn't finished payout setup|choose who receives|payout setup/, "sponsor is told the payee isn't ready (no Fund button)");
 rec((await sam.locator("main button:has-text('Fund this deal')").count()) === 0, "no Fund button until payouts are ready");
-await open(ada, "/dashboard/deals"); await see(ada, /Payouts.*Not set up/, "athlete sees the Payouts card");
+await mfaRefresh(ada, B, secrets["ada@x.com"]); await open(ada, "/dashboard/deals"); await see(ada, /Payouts.*Not set up/, "athlete sees the Payouts card");
 const onboardUrl = await setupPayouts(ada, "ada@x.com");
 rec(/localhost:4010\/_onboard\/acct_/.test(onboardUrl), "Set up payouts redirects to Stripe's hosted onboarding", onboardUrl);
 await see(ada, /Payouts are ready/, "returning from onboarding reads the real account state");
 rec(sql(`select payouts_enabled::text from payout_accounts where user_id='${id("ada@x.com")}'`) === "true", "payout account flags stored");
-await open(sam, `/dashboard/deals/${A}`);
+await mfaRefresh(sam, B, samSecret); await open(sam, `/dashboard/deals/${A}`);
 await see(sam, /Platform fee \(5%\).*\$75\.00.*Payee receives.*\$1,425\.00/, "payment card shows the fee breakdown (5% of $1,500 = $75)");
 await sam.locator("main button:has-text('Fund this deal')").click(); await sam.waitForURL(/localhost:4010\/_pay\/cs_/, { timeout: 30000 }).catch(() => {});
 rec(/localhost:4010\/_pay\/cs_/.test(sam.url()), "Fund redirects to Stripe-hosted Checkout (no card form in our app)", sam.url());
 const ms = await mock("/_admin/state"); const sess = Object.values(ms.sessions)[0];
 rec(sess?.amount_total === 150000 && sess.currency === "usd" && sess.metadata.deal_id === A && sess.transfer_group === `deal_${A}`, "Checkout session has the exact amount, deal metadata and transfer group", JSON.stringify(sess));
 rec(pstate(A) === "pending_checkout" && sql(`select amount_cents||':'||fee_cents from deal_payments where deal_id='${A}'`) === "150000:7500", "payment row pending with fee 7500");
-await open(sam, `/dashboard/deals/${A}?paid=1`); await see(sam, /processing/, "returning before paying shows 'processing', not 'paid'");
+await mfaRefresh(sam, B, samSecret); await open(sam, `/dashboard/deals/${A}?paid=1`); await see(sam, /processing/, "returning before paying shows 'processing', not 'paid'");
 await sam.locator("main button:has-text('Continue to payment')").click(); await sam.waitForURL(/localhost:4010\/_pay\/cs_/, { timeout: 30000 }).catch(() => {});
 rec(Object.keys((await mock("/_admin/state")).sessions).length === 1, "resuming funding reuses the same Checkout session (no duplicates)");
 rec(sql(`select count(*) from deal_payments where deal_id='${A}'`) === "1", "still exactly one payment row");
@@ -132,18 +132,18 @@ rec(good.status === 200 && pstate(A) === "funded", "valid webhook marks the paym
 const dup = await hook(evt.type, paid, { id: evt.id });
 rec(dup.status === 200 && dup.json?.duplicate === true && sql(`select count(*) from payment_events where action='funded'`) === "1", "duplicate delivery is acknowledged and processed once");
 rec(sql("select count(*) from stripe_events where id='evt_fixed_A1'") === "1", "event id recorded for de-duplication");
-await open(sam, `/dashboard/deals/${A}`); await see(sam, /Funded — held until/, "deal page shows funded");
-await open(sam, `/dashboard/deals/${A}`); rec((await sam.locator("main button:has-text('Fund this deal')").count()) === 0, "can't fund twice");
+await mfaRefresh(sam, B, samSecret); await open(sam, `/dashboard/deals/${A}`); await see(sam, /Funded — held until/, "deal page shows funded");
+await mfaRefresh(sam, B, samSecret); await open(sam, `/dashboard/deals/${A}`); rec((await sam.locator("main button:has-text('Fund this deal')").count()) === 0, "can't fund twice");
 
 // completion releases the money
-await open(ada, `/dashboard/deals/${A}`); rec((await ada.locator("main button:has-text('Mark completed')").count()) === 0, "the athlete can't mark the deal completed");
-await open(sam, `/dashboard/deals/${A}`); await click(sam, "Mark completed");
+await mfaRefresh(ada, B, secrets["ada@x.com"]); await open(ada, `/dashboard/deals/${A}`); rec((await ada.locator("main button:has-text('Mark completed')").count()) === 0, "the athlete can't mark the deal completed");
+await mfaRefresh(sam, B, samSecret); await open(sam, `/dashboard/deals/${A}`); await click(sam, "Mark completed");
 rec(dstate(A) === "completed" && pstate(A) === "released", "completing releases the payment", dstate(A) + "/" + pstate(A));
 const ms2 = await mock("/_admin/state"); const tr = ms2.transfers[0];
 const acctAda = sql(`select stripe_account_id from payout_accounts where user_id='${id("ada@x.com")}'`);
 rec(ms2.transfers.length === 1 && tr.amount === 142500 && tr.destination === acctAda && tr.transfer_group === `deal_${A}` && !!tr.source_transaction, "exactly one transfer: $1,425.00 (after the 5% fee) to the athlete's account, tied to the charge", JSON.stringify(ms2.transfers));
 rec(sql(`select stripe_transfer_id is not null from deal_payments where deal_id='${A}'`) === "t", "transfer id stored");
-await open(ada, `/dashboard/deals/${A}`); await see(ada, /Paid out/, "athlete sees 'Paid out'");
+await mfaRefresh(ada, B, secrets["ada@x.com"]); await open(ada, `/dashboard/deals/${A}`); await see(ada, /Paid out/, "athlete sees 'Paid out'");
 rec(mailsTo("ada@x.com", "Your NIL payment was released").length === 1 && !mails().some((m) => /\$1,?[04]\d\d|142500|150000/.test(m)), "payout email sent, with no amounts in any email");
 
 // agreement download
@@ -165,7 +165,7 @@ async function fullFund(athletePage, athleteEmail, title, cents = 150000) {
   secrets[athleteEmail] ??= await mfaEnrollAt(athletePage, B, OLD);
   await mfaRefresh(sam, B, samSecret); await signAs(sam, d, "Sam Sponsor");
   await mfaRefresh(athletePage, B, secrets[athleteEmail]); await signAs(athletePage, d, sql(`select full_name from users where email='${athleteEmail}'`));
-  await mfaRefresh(sam, B, samSecret); await open(sam, `/dashboard/deals/${d}`); await sam.locator("main button:has-text('Fund this deal')").click(); await sam.waitForURL(/localhost:4010/, { timeout: 30000 }).catch(() => {});
+  await mfaRefresh(sam, B, samSecret); await mfaRefresh(sam, B, samSecret); await open(sam, `/dashboard/deals/${d}`); await sam.locator("main button:has-text('Fund this deal')").click(); await sam.waitForURL(/localhost:4010/, { timeout: 30000 }).catch(() => {});
   const sid = sql(`select stripe_checkout_session_id from deal_payments where deal_id='${d}'`);
   const paidSession = await mock(`/_admin/pay/${sid}`, "POST");
   await hook("checkout.session.completed", paidSession);
@@ -193,27 +193,27 @@ rec(dstate(Bd) === "awaiting_signature", "sponsor signature alone doesn't activa
 await signAs(maria, Bd, "Maria Reyes");
 rec(sql(`select signer_role from contract_signatures where signer_user_id='${id("maria@x.com")}'`) === "guardian", "the approving guardian signs on the minor's behalf");
 rec(dstate(Bd) === "active", "sponsor + guardian signatures → active");
-await open(sam, `/dashboard/deals/${Bd}`); rec((await sam.locator("main button:has-text('Fund this deal')").count()) === 0, "no funding while the payee has no payout account");
+await mfaRefresh(sam, B, samSecret); await open(sam, `/dashboard/deals/${Bd}`); rec((await sam.locator("main button:has-text('Fund this deal')").count()) === 0, "no funding while the payee has no payout account");
 await mfaEnrollAt(dan, B, OLD);
 await open(dan, `/dashboard/deals/${Bd}`); await click(dan, "Receive this payment myself");
 rec(sql(`select payee_user_id='${id("dan@x.com")}' from deals where id='${Bd}'`) === "t", "a current guardian can take over as payee");
 await open(eve, `/dashboard/deals/${Bd}`); rec((await eve.goto(`${B}/dashboard/deals/${Bd}`)).status() === 404, "outsiders can't see the deal or its payment");
 await setupPayouts(dan, "dan@x.com");
-await mfaRefresh(sam, B, samSecret); await open(sam, `/dashboard/deals/${Bd}`); await sam.locator("main button:has-text('Fund this deal')").click(); await sam.waitForURL(/localhost:4010/, { timeout: 30000 }).catch(() => {});
+await mfaRefresh(sam, B, samSecret); await mfaRefresh(sam, B, samSecret); await open(sam, `/dashboard/deals/${Bd}`); await sam.locator("main button:has-text('Fund this deal')").click(); await sam.waitForURL(/localhost:4010/, { timeout: 30000 }).catch(() => {});
 const bSid = sql(`select stripe_checkout_session_id from deal_payments where deal_id='${Bd}'`);
 await mock(`/_admin/pay/${bSid}`, "POST");   // paid on Stripe, but NO webhook is sent
 rec(pstate(Bd) === "pending_checkout", "(setup) paid on Stripe, webhook not delivered");
-await open(sam, `/dashboard/deals/${Bd}?paid=1`); await see(sam, /Funded — held until/, "viewing the deal reconciles with Stripe and finds it funded (no webhook needed)");
+await mfaRefresh(sam, B, samSecret); await open(sam, `/dashboard/deals/${Bd}?paid=1`); await see(sam, /Funded — held until/, "viewing the deal reconciles with Stripe and finds it funded (no webhook needed)");
 rec(pstate(Bd) === "funded", "payment funded via reconciliation");
 // mutual cancellation
-await open(sam, `/dashboard/deals/${Bd}`);
+await mfaRefresh(sam, B, samSecret); await open(sam, `/dashboard/deals/${Bd}`);
 rec((await sam.locator("main button:has-text('Cancel deal')").count()) === 0, "funded deals can't be cancelled unilaterally");
 await click(sam, "Request cancellation & refund"); rec(sql(`select cancel_requested_side from deals where id='${Bd}'`) === "buyer", "sponsor requests cancellation");
-await open(sam, `/dashboard/deals/${Bd}`); rec((await sam.locator("main button:has-text('Agree to cancel')").count()) === 0, "the requester can't agree to their own request");
+await mfaRefresh(sam, B, samSecret); await open(sam, `/dashboard/deals/${Bd}`); rec((await sam.locator("main button:has-text('Agree to cancel')").count()) === 0, "the requester can't agree to their own request");
 await see(sam, /Withdraw cancellation request/, "…but can withdraw it");
 await open(jordan, `/dashboard/deals/${Bd}`); rec((await jordan.locator("main button:has-text('cancel')").count()) === 0, "the minor athlete has no cancellation controls");
 await click(sam, "Withdraw cancellation request"); rec(sql(`select cancel_requested_side is null from deals where id='${Bd}'`) === "t", "request withdrawn");
-await open(sam, `/dashboard/deals/${Bd}`); await click(sam, "Request cancellation & refund");
+await mfaRefresh(sam, B, samSecret); await open(sam, `/dashboard/deals/${Bd}`); await click(sam, "Request cancellation & refund");
 await open(maria, `/dashboard/deals/${Bd}`); await see(maria, /asked to cancel and refund/, "a guardian sees the request");
 await click(maria, "Agree to cancel & refund");
 rec(dstate(Bd) === "cancelled" && pstate(Bd) === "refunded", "mutual agreement cancels the deal and refunds the sponsor", dstate(Bd) + "/" + pstate(Bd));
@@ -225,10 +225,10 @@ rec(mailsTo("sam@x.com", "A NIL deal was cancelled and refunded").length === 1, 
 const C = await fullFund(ada, "ada@x.com", "Retry deal");
 rec(pstate(C.d) === "funded", "(setup) deal C funded");
 await mock("/_admin/fail-transfers?n=1", "POST");
-await open(sam, `/dashboard/deals/${C.d}`); await click(sam, "Mark completed");
+await mfaRefresh(sam, B, samSecret); await open(sam, `/dashboard/deals/${C.d}`); await click(sam, "Mark completed");
 rec(dstate(C.d) === "completed" && pstate(C.d) === "releasing", "when Stripe fails, the deal is completed and the payout stays pending", dstate(C.d) + "/" + pstate(C.d));
 rec(sql(`select attempts||':'||(last_error like '%balance_insufficient%') from deal_payments where deal_id='${C.d}'`) === "1:true", "failure recorded with attempt count");
-await open(ada, `/dashboard/deals/${C.d}`); await see(ada, /Payout in progress|Payout pending/, "athlete sees the payout is pending, not lost");
+await mfaRefresh(ada, B, secrets["ada@x.com"]); await open(ada, `/dashboard/deals/${C.d}`); await see(ada, /Payout in progress|Payout pending/, "athlete sees the payout is pending, not lost");
 rec((await transfers()).length === 1, "no transfer yet for deal C");
 const cron = async () => (await fetch(`${B}/api/cron/daily`, { method: "POST", headers: { Authorization: `Bearer ${CRON}` } })).json();
 let j = await cron();
@@ -246,7 +246,7 @@ rec(pstate(C.d) === "released" && sql(`select stripe_transfer_id from deal_payme
 // =================== D. two simultaneous 'complete' clicks pay once ===================
 const D = await fullFund(ada, "ada@x.com", "Race deal");
 const sam2 = await newPage(); await sam2.context().addCookies(await sam.context().cookies());
-await open(sam, `/dashboard/deals/${D.d}`); await open(sam2, `/dashboard/deals/${D.d}`);
+await mfaRefresh(sam, B, samSecret); await open(sam, `/dashboard/deals/${D.d}`); await open(sam2, `/dashboard/deals/${D.d}`);
 const before = (await transfers()).length;
 await Promise.all([sam.locator("main button:has-text('Mark completed')").first().click(), sam2.locator("main button:has-text('Mark completed')").first().click()]);
 await Promise.all([settle(sam), settle(sam2)]);
@@ -255,15 +255,15 @@ rec(sql(`select count(*) from deal_events where deal_id='${D.d}' and action='com
 
 // =================== E. unfunded cancel; payment that arrives after the checkout was closed is refunded ===================
 const E = mkDeal("ada@x.com", "Cancel deal test");
-await open(ada, `/dashboard/deals/${E}`); await click(ada, "Accept"); await signAs(ada, E, "Ada Adult"); await signAs(sam, E, "Sam Sponsor");
-await open(sam, `/dashboard/deals/${E}`); await sam.locator("main button:has-text('Fund this deal')").click(); await sam.waitForURL(/localhost:4010/, { timeout: 30000 }).catch(() => {});
+await mfaRefresh(ada, B, secrets["ada@x.com"]); await open(ada, `/dashboard/deals/${E}`); await click(ada, "Accept"); await mfaRefresh(sam, B, samSecret); await signAs(sam, E, "Sam Sponsor"); await mfaRefresh(ada, B, secrets["ada@x.com"]); await signAs(ada, E, "Ada Adult");
+await mfaRefresh(sam, B, samSecret); await open(sam, `/dashboard/deals/${E}`); await sam.locator("main button:has-text('Fund this deal')").click(); await sam.waitForURL(/localhost:4010/, { timeout: 30000 }).catch(() => {});
 const eSid = sql(`select stripe_checkout_session_id from deal_payments where deal_id='${E}'`);
 // forgery: turn the "Cancel deal" form into a "complete" request on an unfunded deal
-await open(sam, `/dashboard/deals/${E}`);
+await mfaRefresh(sam, B, samSecret); await open(sam, `/dashboard/deals/${E}`);
 await sam.locator('main form:has(button:has-text("Cancel deal")) [name=action]').evaluate((el) => { el.value = "complete"; });
 await click(sam, "Cancel deal"); await see(sam, /Fund the deal first/, "FORGED: completing an unfunded deal is refused server-side");
 rec(dstate(E) === "active", "deal unchanged after the forgery");
-await open(ada, `/dashboard/deals/${E}`); await click(ada, "Cancel deal");
+await mfaRefresh(ada, B, secrets["ada@x.com"]); await open(ada, `/dashboard/deals/${E}`); await click(ada, "Cancel deal");
 rec(dstate(E) === "cancelled" && pstate(E) === "expired", "either side may cancel an unfunded deal; the open checkout is closed");
 rec((await mock("/_admin/state")).sessions[eSid].status === "expired", "the Stripe checkout session was expired");
 const refundsBefore = (await refunds()).length;
@@ -274,8 +274,8 @@ rec(sql(`select count(*) from payment_events pe join deal_payments p on p.id=pe.
 
 // =================== F. webhook edge cases ===================
 const F = mkDeal("ada@x.com", "Webhook edge cases");
-await open(ada, `/dashboard/deals/${F}`); await click(ada, "Accept"); await signAs(ada, F, "Ada Adult"); await signAs(sam, F, "Sam Sponsor");
-await open(sam, `/dashboard/deals/${F}`); await sam.locator("main button:has-text('Fund this deal')").click(); await sam.waitForURL(/localhost:4010/, { timeout: 30000 }).catch(() => {});
+await mfaRefresh(ada, B, secrets["ada@x.com"]); await open(ada, `/dashboard/deals/${F}`); await click(ada, "Accept"); await mfaRefresh(sam, B, samSecret); await signAs(sam, F, "Sam Sponsor"); await mfaRefresh(ada, B, secrets["ada@x.com"]); await signAs(ada, F, "Ada Adult");
+await mfaRefresh(sam, B, samSecret); await open(sam, `/dashboard/deals/${F}`); await sam.locator("main button:has-text('Fund this deal')").click(); await sam.waitForURL(/localhost:4010/, { timeout: 30000 }).catch(() => {});
 const fSid = sql(`select stripe_checkout_session_id from deal_payments where deal_id='${F}'`);
 const fPaid = await mock(`/_admin/pay/${fSid}`, "POST");
 const wrongAmt = await hook("checkout.session.completed", { ...fPaid, amount_total: fPaid.amount_total - 100 });
@@ -291,7 +291,7 @@ rec(pstate(F) === "funded", "the correct event then funds it");
 const acct = sql(`select stripe_account_id from payout_accounts where user_id='${id("ada@x.com")}'`);
 await hook("account.updated", { id: acct, details_submitted: true, payouts_enabled: false, charges_enabled: true });
 rec(sql(`select payouts_enabled::text from payout_accounts where user_id='${id("ada@x.com")}'`) === "false", "account.updated webhook turns payouts off");
-await open(sam, `/dashboard/deals/${F}`); await click(sam, "Mark completed");
+await mfaRefresh(sam, B, samSecret); await open(sam, `/dashboard/deals/${F}`); await click(sam, "Mark completed");
 rec(dstate(F) === "completed", "(setup) deal completed while the payee's payouts are disabled", dstate(F));
 rec(pstate(F) === "releasing", "no payout while the payee can't receive: it waits", pstate(F));
 await hook("account.updated", { id: acct, details_submitted: true, payouts_enabled: true, charges_enabled: true });
@@ -302,30 +302,30 @@ rec(pstate(F) === "released", "once payouts are re-enabled the job pays out", ps
 // =================== G. authorization forgeries ===================
 const bo = await made({ name: "Bo Sponsor", email: "bo@x.com", role: "sponsor" });
 const G = mkDeal("ada@x.com", "Bo deal"); sql(`update deals set counterparty_id='${id("bo@x.com")}' where id='${G}'`);
-await open(ada, `/dashboard/deals/${G}`); await click(ada, "Accept"); await signAs(ada, G, "Ada Adult"); await signAs(bo, G, "Bo Sponsor");
-const H = mkDeal("ada@x.com", "Sam deal for forgery"); await open(ada, `/dashboard/deals/${H}`); await click(ada, "Accept"); await signAs(ada, H, "Ada Adult"); await signAs(sam, H, "Sam Sponsor");
-await open(sam, `/dashboard/deals/${H}`);
+await mfaRefresh(ada, B, secrets["ada@x.com"]); await open(ada, `/dashboard/deals/${G}`); await click(ada, "Accept"); await signAs(ada, G, "Ada Adult"); await signAs(bo, G, "Bo Sponsor");
+const H = mkDeal("ada@x.com", "Sam deal for forgery"); await mfaRefresh(ada, B, secrets["ada@x.com"]); await open(ada, `/dashboard/deals/${H}`); await click(ada, "Accept"); await mfaRefresh(sam, B, samSecret); await signAs(sam, H, "Sam Sponsor"); await mfaRefresh(ada, B, secrets["ada@x.com"]); await signAs(ada, H, "Ada Adult");
+await mfaRefresh(sam, B, samSecret); await open(sam, `/dashboard/deals/${H}`);
 await sam.locator('main form:has(button:has-text("Fund this deal")) [name=deal_id]').evaluate((el, v) => { el.value = v; }, G);
 await click(sam, "Fund this deal");
 await settle(sam);
 rec(decodeURIComponent(sam.url()).includes("Only the sponsor funds a deal"), "FORGED: funding someone else's deal is refused by the server", sam.url());
 rec(pstate(G) === "none", "no payment created for the other sponsor's deal");
-await open(ada, `/dashboard/deals/${Bd}/contract`);   // Ada has no standing on Jordan's deal
-const J = mkDeal("ada@x.com", "Forged signature"); await open(ada, `/dashboard/deals/${J}`); await click(ada, "Accept");
-await open(ada, `/dashboard/deals/${J}/contract`);
+await mfaRefresh(ada, B, secrets["ada@x.com"]); await open(ada, `/dashboard/deals/${Bd}/contract`);   // Ada has no standing on Jordan's deal
+const J = mkDeal("ada@x.com", "Forged signature"); await mfaRefresh(ada, B, secrets["ada@x.com"]); await open(ada, `/dashboard/deals/${J}`); await click(ada, "Accept");
+await mfaRefresh(ada, B, secrets["ada@x.com"]); await open(ada, `/dashboard/deals/${J}/contract`);
 await ada.locator("[name=deal_id]").evaluate((el, v) => { el.value = v; }, Bd);
 await ada.fill("[name=typed_name]", "Ada Adult"); await ada.check("[name=consent]"); await ada.locator("main button:has-text('Sign agreement')").click(); await settle(ada);
 rec(sql(`select count(*) from contract_signatures where signer_user_id='${id("ada@x.com")}' and contract_id=(select id from contracts where deal_id='${Bd}')`) === "0", "FORGED: signing a deal you're not part of records nothing");
 
 // =================== H. expiry and withdrawal while signing ===================
 sql(`update deals set expires_at = now() - interval '1 minute' where id='${J}'`);
-await open(ada, `/dashboard/deals/${J}/contract`); await see(ada, /expired/i, "an agreement can't be signed after the signing window");
+await mfaRefresh(ada, B, secrets["ada@x.com"]); await open(ada, `/dashboard/deals/${J}/contract`); await see(ada, /expired/i, "an agreement can't be signed after the signing window");
 rec((await ada.locator("main [name=typed_name]").count()) === 0, "no signing form once expired");
-const K = mkDeal("ada@x.com", "Withdraw while signing"); await open(ada, `/dashboard/deals/${K}`); await click(ada, "Accept"); await signAs(sam, K, "Sam Sponsor");
-await open(sam, `/dashboard/deals/${K}`); await click(sam, "Withdraw offer");
+const K = mkDeal("ada@x.com", "Withdraw while signing"); await mfaRefresh(ada, B, secrets["ada@x.com"]); await open(ada, `/dashboard/deals/${K}`); await click(ada, "Accept"); await signAs(sam, K, "Sam Sponsor");
+await mfaRefresh(sam, B, samSecret); await open(sam, `/dashboard/deals/${K}`); await click(sam, "Withdraw offer");
 rec(dstate(K) === "withdrawn" && sql(`select (voided_at is not null)::text from contracts where deal_id='${K}'`) === "true", "withdrawing during signing voids the agreement");
 rec(sql(`select count(*) from contract_signatures where contract_id=(select id from contracts where deal_id='${K}')`) === "1", "…but the existing signature stays on record");
-await open(ada, `/dashboard/deals/${K}/contract`); await see(ada, /Voided/, "agreement shows as voided");
+await mfaRefresh(ada, B, secrets["ada@x.com"]); await open(ada, `/dashboard/deals/${K}/contract`); await see(ada, /Voided/, "agreement shows as voided");
 rec((await ada.locator("main [name=typed_name]").count()) === 0, "no signing form on a voided agreement");
 
 // =================== I. account deletion vs money, signatures retained ===================
@@ -344,8 +344,8 @@ rec(sql("select count(*) from payout_accounts where stripe_account_id='acct_zoe_
 rec(sql(`select count(*) from contracts where deal_id='${Z}'`) === "1", "the contract itself remains as a record");
 
 // =================== J. daily job reconciles a checkout whose webhook never arrived ===================
-const Jd = mkDeal("ada@x.com", "Reconcile by job"); await open(ada, `/dashboard/deals/${Jd}`); await click(ada, "Accept"); await signAs(ada, Jd, "Ada Adult"); await signAs(sam, Jd, "Sam Sponsor");
-await open(sam, `/dashboard/deals/${Jd}`); await sam.locator("main button:has-text('Fund this deal')").click(); await sam.waitForURL(/localhost:4010/, { timeout: 30000 }).catch(() => {});
+const Jd = mkDeal("ada@x.com", "Reconcile by job"); await mfaRefresh(ada, B, secrets["ada@x.com"]); await open(ada, `/dashboard/deals/${Jd}`); await click(ada, "Accept"); await mfaRefresh(sam, B, samSecret); await signAs(sam, Jd, "Sam Sponsor"); await mfaRefresh(ada, B, secrets["ada@x.com"]); await signAs(ada, Jd, "Ada Adult");
+await mfaRefresh(sam, B, samSecret); await open(sam, `/dashboard/deals/${Jd}`); await sam.locator("main button:has-text('Fund this deal')").click(); await sam.waitForURL(/localhost:4010/, { timeout: 30000 }).catch(() => {});
 await mock(`/_admin/pay/${sql(`select stripe_checkout_session_id from deal_payments where deal_id='${Jd}'`)}`, "POST");
 sql(`update deal_payments set updated_at = now() - interval '5 minutes' where deal_id='${Jd}'`);
 await cron(); rec(pstate(Jd) === "funded", "the daily job reconciles a paid checkout whose webhook was lost");
