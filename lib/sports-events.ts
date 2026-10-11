@@ -117,3 +117,37 @@ export async function setGuardianConsent(guardianId: string, athleteId: string, 
     return { ok: true as const };
   });
 }
+
+/** Adds another athlete to an event. You may only add someone you have family authority over; consent for them starts empty. */
+export async function addAttendee(actor: Actor, eventId: string, athleteId: string): Promise<Result> {
+  if (!validId(eventId) || !validId(athleteId)) return fail('Unknown event or athlete.');
+  return tx(async (c) => {
+    const ev = (await c.query('SELECT status FROM events WHERE id=$1 FOR UPDATE', [eventId])).rows[0];
+    if (!ev || !(await mayManage(c, actor.userId, eventId)) || !(await familyAuthority(actor.userId, athleteId, c))) return fail('You can’t add that athlete to this event.');
+    if (ev.status === 'cancelled') return fail('This event was cancelled.');
+    const r = await c.query('INSERT INTO sports_attendees(event_id,athlete_id) VALUES($1,$2) ON CONFLICT DO NOTHING', [eventId, athleteId]);
+    if (!r.rowCount) return { ok: true as const, message: 'Already attending.' };
+    await c.query("INSERT INTO operations_activity(athlete_id,actor_id,event_id,action) VALUES($1,$2,$3,'event.attendee_added')", [athleteId, actor.userId, eventId]);
+    return { ok: true as const, message: 'Athlete added. Guardian consent is needed for them.' };
+  });
+}
+
+/** Removes an athlete from an event. Only that athlete's own family can, and an event is never left with nobody (cancel it instead). */
+export async function removeAttendee(actor: Actor, eventId: string, athleteId: string): Promise<Result> {
+  if (!validId(eventId) || !validId(athleteId)) return fail('Unknown event or athlete.');
+  return tx(async (c) => {
+    const ev = (await c.query('SELECT status FROM events WHERE id=$1 FOR UPDATE', [eventId])).rows[0];
+    if (!ev || !(await familyAuthority(actor.userId, athleteId, c))) return fail('You can’t remove that athlete.');
+    const n = Number((await c.query('SELECT count(*) AS n FROM sports_attendees WHERE event_id=$1', [eventId])).rows[0].n);
+    if (n <= 1) return fail('An event needs at least one athlete. Cancel the event instead.');
+    const r = await c.query('DELETE FROM sports_attendees WHERE event_id=$1 AND athlete_id=$2', [eventId, athleteId]);
+    if (!r.rowCount) return fail('That athlete is not attending this event.');
+    await c.query("INSERT INTO operations_activity(athlete_id,actor_id,event_id,action) VALUES($1,$2,$3,'event.attendee_removed')", [athleteId, actor.userId, eventId]);
+    return { ok: true as const, message: 'Athlete removed from the event.' };
+  });
+}
+
+/** Venues this person already entered, so a recurring field or gym is chosen rather than retyped. */
+export async function reusableVenues(userId: string) {
+  return (await db().query('SELECT DISTINCT ON (lower(name),lower(address)) id,name,address FROM sports_venues WHERE created_by=$1 ORDER BY lower(name),lower(address),id LIMIT 100', [userId])).rows as { id: string; name: string; address: string }[];
+}

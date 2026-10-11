@@ -21,7 +21,8 @@ export async function addSportsEvent(form:FormData) {
  const c=await db().connect();
  try {await c.query('BEGIN');
   const venueName=String(form.get('venue')??'').trim().slice(0,160),address=String(form.get('address')??'').trim().slice(0,300);
-  const venue=venueName?(await c.query('INSERT INTO sports_venues(created_by,name,address,latitude,longitude) VALUES($1,$2,$3,$4,$5) RETURNING id',[s.userId,venueName,address,lat?Number(lat):null,lon?Number(lon):null])).rows[0].id:null;
+  const reuse=String(form.get('venue_id')??''),reused=validId(reuse)?(await c.query('SELECT id FROM sports_venues WHERE id=$1 AND created_by=$2',[reuse,s.userId])).rows[0]?.id:null;
+  const venue=reused??(venueName?(await c.query('INSERT INTO sports_venues(created_by,name,address,latitude,longitude) VALUES($1,$2,$3,$4,$5) RETURNING id',[s.userId,venueName,address,lat?Number(lat):null,lon?Number(lon):null])).rows[0].id:null);
   const event=(await c.query("INSERT INTO events(organizer_id,name,starts_on,status) VALUES($1,$2,$3,'published') RETURNING id",[s.userId,name,start.slice(0,10)])).rows[0].id;
   await c.query('INSERT INTO sports_event_details(event_id,kind,starts_at,ends_at,venue_id,season_id,organization_id,recruiting_visible) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',[event,kind,`${start}Z`,`${end}Z`,venue,seasonRecord?.id??null,seasonRecord?.organization_id??null,recruitingVisible]);
   await c.query('INSERT INTO sports_attendees(event_id,athlete_id) VALUES($1,$2)',[event,athlete]);
@@ -61,4 +62,17 @@ export async function createSeason(form:FormData) {
  const {organizationFor}=await import('@/lib/organizations');
  if(!name||name.length>120||!/^\d{4}-\d{2}-\d{2}$/.test(start)||!/^\d{4}-\d{2}-\d{2}$/.test(end)||!Number.isFinite(Date.parse(start))||!Number.isFinite(Date.parse(end))||end<start||(organization&&!await organizationFor(s.userId,organization)))redirect('/dashboard/schedule?error=Enter+valid+season+details');
  await db().query('INSERT INTO sports_seasons(created_by,name,starts_on,ends_on,organization_id) VALUES($1,$2,$3,$4,$5)',[s.userId,name,start,end,organization||null]);redirect('/dashboard/schedule');
+}
+
+export async function addEventAttendee(form:FormData) {
+ const s=await requireUser(),athlete=String(form.get('athlete_id')??''),event=String(form.get('event_id')??''),other=String(form.get('other_athlete_id')??'');
+ const {addAttendee}=await import('@/lib/sports-events');
+ const r=await addAttendee(s,event,other);
+ redirect(`/dashboard/schedule?athlete=${encodeURIComponent(athlete)}&${r.ok?'msg':'error'}=${encodeURIComponent(r.ok?r.message??'Added.':r.error)}`);
+}
+export async function removeEventAttendee(form:FormData) {
+ const s=await requireUser(),athlete=String(form.get('athlete_id')??''),event=String(form.get('event_id')??'');
+ const {removeAttendee}=await import('@/lib/sports-events');
+ const r=await removeAttendee(s,event,athlete);
+ redirect(`/dashboard/schedule?athlete=${encodeURIComponent(athlete)}&${r.ok?'msg':'error'}=${encodeURIComponent(r.ok?r.message??'Removed.':r.error)}`);
 }

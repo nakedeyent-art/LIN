@@ -1,6 +1,6 @@
 import { beforeEach, afterAll, describe, it, expect } from 'vitest';
 import { db } from '../lib/db';
-import { updateEvent, cancelEvent, setGuardianConsent, type EventEdit } from '../lib/sports-events';
+import { updateEvent, cancelEvent, setGuardianConsent, addAttendee, removeAttendee, reusableVenues, type EventEdit } from '../lib/sports-events';
 
 type Actor = { userId: string; role: 'athlete' | 'parent' | 'coach' | 'recruiter' };
 let athlete: Actor, guardian: Actor, stranger: Actor, coach: Actor, ev: string;
@@ -122,5 +122,40 @@ describe('guardian consent', () => {
     expect((await setGuardianConsent(guardian.userId, other.userId, ev, true)).ok).toBe(false);
     await db().query("UPDATE athlete_profiles SET birth_date=CURRENT_DATE-INTERVAL '19 years' WHERE user_id=$1", [athlete.userId]);
     expect((await setGuardianConsent(guardian.userId, athlete.userId, ev, true)).ok).toBe(false);
+  });
+});
+
+describe('multiple athletes and saved venues', () => {
+  let sibling: Actor;
+  beforeEach(async () => {
+    sibling = await user('Sibling', 'athlete');
+    await db().query("INSERT INTO athlete_profiles(user_id,sport,level,birth_date) VALUES($1,'Soccer','high_school',CURRENT_DATE-INTERVAL '14 years')", [sibling.userId]);
+    await db().query("INSERT INTO athlete_relationships(athlete_id,member_id,relationship,guardian_approved) VALUES($1,$2,'parent',true)", [sibling.userId, guardian.userId]);
+  });
+  const count = async () => Number((await db().query('SELECT count(*) AS n FROM sports_attendees WHERE event_id=$1', [ev])).rows[0].n);
+  it('adds an athlete only for someone with authority over them, with no consent carried over', async () => {
+    expect((await addAttendee(stranger, ev, sibling.userId)).ok).toBe(false);
+    expect((await addAttendee(coach, ev, sibling.userId)).ok).toBe(false);
+    expect((await addAttendee(guardian, ev, sibling.userId)).ok).toBe(true);
+    expect((await addAttendee(guardian, ev, sibling.userId)).ok).toBe(true);
+    expect(await count()).toBe(2);
+    expect((await db().query('SELECT guardian_consent_at FROM sports_attendees WHERE event_id=$1 AND athlete_id=$2', [ev, sibling.userId])).rows[0].guardian_consent_at).toBeNull();
+  });
+  it('cannot add to a cancelled event or with a bad id', async () => {
+    await cancelEvent(guardian, ev);
+    expect((await addAttendee(guardian, ev, sibling.userId)).ok).toBe(false);
+    expect((await addAttendee(guardian, 'nope', sibling.userId)).ok).toBe(false);
+  });
+  it('removes an athlete only for their own family and never empties the event', async () => {
+    await addAttendee(guardian, ev, sibling.userId);
+    expect((await removeAttendee(stranger, ev, sibling.userId)).ok).toBe(false);
+    expect((await removeAttendee(guardian, ev, sibling.userId)).ok).toBe(true);
+    expect((await removeAttendee(guardian, ev, athlete.userId)).ok).toBe(false);
+    expect(await count()).toBe(1);
+  });
+  it('lists each saved venue once, only the owner\'s', async () => {
+    await db().query("INSERT INTO sports_venues(created_by,name,address) VALUES($1,'Main Field','1 Park Rd'),($2,'Other','x')", [guardian.userId, stranger.userId]);
+    const v = await reusableVenues(guardian.userId);
+    expect(v.map((x) => x.name)).toEqual(['Main Field']);
   });
 });
