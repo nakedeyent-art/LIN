@@ -112,6 +112,21 @@ Typecheck clean; unit 278; integration 143 (18 files); browser: e2e6 (83), e2e17
 ### Not done / not verified
 - Office→PDF conversion for signing (PDF only); recruiter-facing scouting comparison/metrics UI beyond what exists.
 - Real Stripe test-mode settlement and a real email provider were **not** exercised (mock Stripe and local mail only); no deployment.
-- The remaining legacy browser suites (e2e1–e2e5, e2e7–e2e16) were not re-run on this branch; e2e4's earlier failures remain unexplained.
 - Object storage was tested against an in-process S3 stand-in, not a real bucket. Quarantine was tested against a clamd stand-in speaking the real INSTREAM protocol, not a real ClamAV.
 - **No independent Gemini review has happened.** A separate Claude read-only review was run; its confirmed findings were fixed (above). Gemini cannot be run from the cloud session; `docs/GEMINI_REVIEW_HANDOFF.md` is ready to paste.
+
+### Legacy browser suites (ported and re-run on this branch)
+All legacy suites now run through `e2e/runtime.mjs` (disposable `*_e2e` database, local mail log, `E2E_BASE_URL`); the old sandbox paths are gone. Results on this branch: e2e1 ✓, e2e2 ✓ (log-style), e2e3 ✓, e2e4 ✓ (100), e2e5 ✓ (33), e2e7 ✓ (88), e2e8 ✓ (phase 1: 32, phase 2: 9), e2e9 ✓ (120), e2e10 ✓ (9), e2e11 ✓ (12), e2e12 ✓ (47), e2e13 ✓ (72), e2e14 ✓ (103), e2e15 ✓ (57), e2e16 ✓ (118).
+How to run them: start the app with `node e2e/start-local.mjs` (payments suites e2e9/e2e11: `node scripts/mock-stripe.mjs` plus `E2E_PAYMENTS=1 E2E_STRIPE_WEBHOOK_SECRET=whsec_test_mock_secret_0123456789 E2E_PLATFORM_FEE_BPS=500`; e2e8 phase 2: `E2E_RESEND_API_KEY=<any invalid key>`), then `node e2e/<suite>.mjs`.
+
+**The e2e4 mystery, resolved:** its three historical failures were stale expectations, not defects. Stat tiles render the value before the label (`105 Verified study minutes (7d)`, `0 Open offers`); the regexes expected label-then-value.
+
+**Behaviour changes the legacy suites surfaced (all deliberate, tests updated):**
+- Deal agreements are signed through Forg3, in recipient order (sponsor, then the athlete side); the typed-name legacy form only remains for contracts that already carry a legacy signature. Legacy `contract_signatures` rows are written at completion and now carry the signed-PDF hash.
+- Approving, completing, cancelling, signing and funding need a recent second factor; the suites enrol MFA and refresh it (`e2e/mfa-helper.mjs`).
+- Per-IP rate limits (login 40/10 min, reset 10/h, signup 8/h) accumulate across back-to-back suites; each suite now clears `rate_limits` with its fixtures.
+- Booleans concatenated in SQL print `true`/`false`, not `t`/`f`.
+
+**Product bugs found by the legacy suites and fixed:**
+- The message content filter was applied verbatim to deal terms, so "Two Instagram posts" was refused for any minor's deal. Deal titles, deliverables and work items now allow platform names while still blocking contact details, links and handles (`platformsOk`).
+- Deal actions and agreement generation asked for a second factor before checking standing, so an unauthorised sponsor (or a minor athlete) was sent to MFA set-up instead of being refused. Standing is now checked first.

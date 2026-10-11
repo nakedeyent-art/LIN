@@ -31,8 +31,6 @@ The two old e2e6 assertions (Postgres boolean formatting and SQL precedence) are
 
 ## Legacy suites
 
-Other scripts still use cloud-specific paths and database commands. Their previous results are historical, not current verification of this branch. Port their runtime before running outside that sandbox.
+Ported to `runtime.mjs` and passing on this branch; see the "Legacy browser suites" section of `docs/OPERATIONS_IMPLEMENTATION.md` for counts, env and the behaviour changes they surfaced (Forg3 signing order, recent-MFA for money decisions, per-IP rate limits cleared per suite).
 
-Coverage: e2e auth; e2e2 verification/guardians; e2e3 deals; e2e4 real data; e2e5 reset; e2e7 guardians; e2e8 jobs; e2e9–11 mocked payments; e2e12 messaging; e2e13 notifications/admin; e2e14 safety; e2e15 news; e2e16 social/music.
-
-Historical e2e4 expectations and the e2e3 listing timing flake need fresh investigation. Real Stripe and email-provider integration have not been verified by the local mock suites.
+Coverage: e2e auth; e2e2 verification/guardians; e2e3 deals; e2e4 real data; e2e5 reset; e2e7 guardians; e2e8 jobs (phase 2 with a failing mail key); e2e9–11 mocked payments; e2e12 messaging; e2e13 notifications/admin; e2e14 safety; e2e15 news; e2e16 social/music.
