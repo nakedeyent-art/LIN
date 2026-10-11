@@ -40,6 +40,11 @@ try {
   await openDetails(g,'Add recipient','form:has([name=action][value=recipient]) [name=user_id]');const f=g.locator('form').filter({has:g.locator('[name=action][value=recipient]')});await f.locator('[name=user_id]').selectOption(id);await f.locator('[name=capacity]').selectOption(capacity);await f.locator('[name=order]').fill(order);await submitAndWait(g,f.getByRole('button',{name:'Add recipient'}));
  }
  const recipients=sql(`SELECT id FROM signing_recipients WHERE envelope_id='${envelope}' ORDER BY signing_order`).split('\n');
+ await openDetails(g,'Add signing field','form:has([name=action][value=field]) [name=recipient_id]');
+ { const page1=g.locator('.placer-page').first();await page1.waitFor({timeout:45000});const box=await page1.boundingBox();
+   await page1.hover({position:{x:box.width*0.5,y:box.height*0.2}});await g.mouse.down();await page1.hover({position:{x:box.width*0.8,y:box.height*0.2}});await g.mouse.up();await g.waitForTimeout(200);
+   const f=g.locator('form').filter({has:g.locator('[name=action][value=field]')});const x=Number(await f.locator('[name=x]').inputValue()),y=Number(await f.locator('[name=y]').inputValue()),w=Number(await f.locator('[name=width]').inputValue());
+   ok(Math.abs(x-50)<=2&&Math.abs(y-20)<=2&&Math.abs(w-30)<=3,`clicking the rendered page places the field (got ${x},${y},${w})`); }
  for(const [i,id] of recipients.entries()){
   await openDetails(g,'Add signing field','form:has([name=action][value=field]) [name=recipient_id]');const f=g.locator('form').filter({has:g.locator('[name=action][value=field]')});await f.locator('[name=recipient_id]').selectOption(id);await f.locator('[name=label]').fill('Full name');await f.locator('[name=y]').fill(String(30+i*20));await submitAndWait(g,f.getByRole('button',{name:'Add field'}));
  }
