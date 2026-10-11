@@ -13,8 +13,19 @@ export async function prepareDealSigning(s:Session,dealId:string) {
   if(!d||!await capacityOn(s.userId,d,c))throw new Error('Deal unavailable');
   const k=(await c.query('SELECT * FROM contracts WHERE deal_id=$1',[dealId])).rows[0];
   if(!k||k.executed_at||k.voided_at||d.status!=='awaiting_signature'||(d.expires_at&&new Date(d.expires_at)<=new Date()))throw new Error('This deal is not open for signing.');
-  const existing=(await c.query('SELECT id FROM signing_envelopes WHERE legacy_contract_id=$1',[k.id])).rows[0];
-  if(existing){await c.query('COMMIT');return existing.id as string;}
+  const existing=(await c.query("SELECT id,athlete_id FROM signing_envelopes WHERE legacy_contract_id=$1 AND status NOT IN ('voided','expired','declined') FOR UPDATE",[k.id])).rows[0];
+  if(existing){
+   // Recipients are fixed when an envelope is created. If an unsigned athlete-side recipient has since lost the right to sign (the athlete
+   // turned 18, or that guardian was replaced) nobody can finish it, so replace it with one addressed to the people who can sign now.
+   const stale=(await c.query(`SELECT r.id,r.user_id FROM signing_recipients r WHERE r.envelope_id=$1 AND r.status<>'signed' AND (
+      (r.capacity='guardian' AND NOT EXISTS(SELECT 1 FROM guardian_links g WHERE g.athlete_id=$2 AND g.member_id=r.user_id))
+      OR (r.capacity='athlete' AND EXISTS(SELECT 1 FROM athlete_profiles p WHERE p.user_id=$2 AND p.birth_date>CURRENT_DATE-INTERVAL '18 years')))`,[existing.id,existing.athlete_id])).rowCount;
+   if(!stale){await c.query('COMMIT');return existing.id as string;}
+   await c.query("UPDATE signing_envelopes SET status='voided' WHERE id=$1",[existing.id]);
+   await c.query("INSERT INTO signing_events(envelope_id,actor_id,action) VALUES($1,$2,'envelope.reissued_authority_changed')",[existing.id,s.userId]);
+   await c.query('DELETE FROM signing_sessions WHERE envelope_id=$1',[existing.id]);
+   await c.query("INSERT INTO notifications(user_id,kind,title,href) SELECT r.user_id,'account','Agreement re-issued: who signs has changed','/dashboard/signing/'||$2::text FROM signing_recipients r WHERE r.envelope_id=$1",[existing.id,existing.id]);
+  }
   if((await c.query('SELECT 1 FROM contract_signatures WHERE contract_id=$1',[k.id])).rowCount)throw new Error('This agreement already has a legacy signature. Finish it in the original agreement view.');
   const minor=(await c.query("SELECT birth_date>CURRENT_DATE-INTERVAL '18 years' AS minor FROM athlete_profiles WHERE user_id=$1",[d.athlete_id])).rows[0].minor;
   const guardian=minor?(await c.query('SELECT member_id FROM guardian_links WHERE athlete_id=$1 ORDER BY (member_id=$2) DESC,member_id LIMIT 1',[d.athlete_id,d.guardian_approved_by])).rows[0]?.member_id:null;

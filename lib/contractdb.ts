@@ -27,8 +27,22 @@ export async function createContractForDeal(c: PoolClient, dealId: string): Prom
     [dealId, TEMPLATE_VERSION, JSON.stringify(terms), body, sha256Hex(body), fee]);
 }
 
+/**
+ * Ends the agreement for a deal that did not reach full signature. This is the single place that does it, so the legacy contract AND any Forg3
+ * envelope generated from it close together: otherwise a withdrawn deal's agreement stays signable. Completed envelopes are never touched.
+ */
 export async function voidContract(c: PoolClient, dealId: string): Promise<void> {
   await c.query("UPDATE contracts SET voided_at = NOW() WHERE deal_id=$1 AND executed_at IS NULL AND voided_at IS NULL", [dealId]);
+  const closed = (await c.query(
+    `UPDATE signing_envelopes SET status='voided'
+      WHERE deal_id=$1 AND legacy_contract_id IS NOT NULL AND status IN ('draft','sent','viewed','partially_signed') RETURNING id`, [dealId])).rows;
+  for (const { id } of closed) {
+    await c.query("INSERT INTO signing_events(envelope_id,action) VALUES($1,'envelope.voided_with_deal')", [id]);
+    await c.query('DELETE FROM signing_sessions WHERE envelope_id=$1', [id]);
+    await c.query(
+      `INSERT INTO notifications(user_id,kind,title,href)
+       SELECT r.user_id,'account','Agreement voided: the deal ended','/dashboard/signing/'||$2::text FROM signing_recipients r WHERE r.envelope_id=$1`, [id, id]);
+  }
 }
 
 export type ContractView = {

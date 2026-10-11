@@ -23,7 +23,7 @@ export default async function ContractPage({ params, searchParams }: { params: P
   const who = await capacityOn(s.userId, d);
   const k = await getContract(id);
   if (!who || !k) notFound();
-  const envelope = (await db().query("SELECT id FROM signing_envelopes WHERE legacy_contract_id=$1", [k.id])).rows[0];
+  const envelope = (await db().query("SELECT id FROM signing_envelopes WHERE legacy_contract_id=$1 ORDER BY (status IN ('voided','expired','declined')), created_at DESC LIMIT 1", [k.id])).rows[0];   // the live one, else the newest
   const ctx = await dealContext(d);
   const mine = k.signatures.find((x) => x.userId === s.userId);
   const check = canSign({ who, athleteIsMinor: ctx.athleteIsMinor, status: d.status, expired: ctx.expired, voided: !!k.voidedAt, alreadySigned: !!mine });
