@@ -68,7 +68,7 @@ input[type=email], input[type=password] { width:100%; }
 .operation-form label,.filter-bar label { display:grid; gap:5px; font-size:13px; color:var(--muted); }
 .upload-details { border:1px solid var(--line); border-radius:6px; padding:16px; margin-bottom:20px; }
 .upload-details summary { cursor:pointer; font-weight:600; }
-.filter-bar { display:flex; gap:12px; flex-wrap:wrap; align-items:end; margin:20px 0; }
+.filter-bar { display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end; margin:20px 0; }
 .filter-bar input[type=text] { width:200px; }
 .document-preview { width:100%; height:620px; background:white; border:1px solid var(--line); }
 .hash-text { word-break:break-all; font-family:monospace; font-size:11px; }
