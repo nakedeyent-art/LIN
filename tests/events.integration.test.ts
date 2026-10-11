@@ -159,3 +159,16 @@ describe('multiple athletes and saved venues', () => {
     expect(v.map((x) => x.name)).toEqual(['Main Field']);
   });
 });
+
+describe('events shared for scouting', () => {
+  it('lists only shared, uncancelled events the athlete attends', async () => {
+    const { sharedEvents } = await import('../lib/scouting');
+    expect(await sharedEvents(athlete.userId)).toEqual([]);
+    await db().query('UPDATE sports_event_details SET recruiting_visible=true WHERE event_id=$1', [ev]);
+    expect((await sharedEvents(athlete.userId)).map((e) => e.id)).toEqual([ev]);
+    expect(await sharedEvents(stranger.userId)).toEqual([]);
+    await cancelEvent(guardian, ev);
+    expect(await sharedEvents(athlete.userId)).toEqual([]);
+    expect(await sharedEvents('nope')).toEqual([]);
+  });
+});

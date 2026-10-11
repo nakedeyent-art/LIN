@@ -15,3 +15,8 @@ export async function privateReports(s:Session,athleteId?:string) {
  // Evaluations never enter shared athlete activity or document search.
  return (await db().query('SELECT r.*,u.full_name AS author_name FROM scouting_reports r JOIN users u ON u.id=r.author_id WHERE (r.author_id=$1 OR EXISTS(SELECT 1 FROM organization_members m WHERE m.organization_id=r.organization_id AND m.user_id=$1)) AND ($2::uuid IS NULL OR r.athlete_id=$2) ORDER BY r.created_at DESC LIMIT 200',[s.userId,athleteId??null])).rows;
 }
+/** Events an athlete's family chose to share with recruiters (not cancelled). Only these may be linked to an observation, and only name and date are ever shown. */
+export async function sharedEvents(athleteId:string) {
+ if(!validId(athleteId))return [];
+ return (await db().query("SELECT e.id,e.name,d.starts_at FROM sports_attendees a JOIN events e ON e.id=a.event_id JOIN sports_event_details d ON d.event_id=e.id WHERE a.athlete_id=$1 AND d.recruiting_visible AND e.status='published' ORDER BY d.starts_at DESC LIMIT 50",[athleteId])).rows as {id:string;name:string;starts_at:Date}[];
+}

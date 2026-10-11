@@ -4,7 +4,7 @@ import { requireUser } from '@/lib/session';
 import { db } from '@/lib/db';
 import { validId } from '@/lib/operations';
 import { organizationFor } from '@/lib/organizations';
-import { visibleProspect } from '@/lib/scouting';
+import { visibleProspect,sharedEvents } from '@/lib/scouting';
 export async function saveScoutingReport(form:FormData) {
  const s=await requireUser(),athlete=String(form.get('athlete_id')??'');
  if(!await visibleProspect(s,athlete))redirect('/dashboard/scouting');
@@ -15,9 +15,10 @@ export async function saveScoutingReport(form:FormData) {
  const template=validId(templateId)?(await db().query('SELECT * FROM scouting_templates WHERE id=$1 AND owner_id=$2',[templateId,s.userId])).rows[0]:null;
  const evaluation:Record<string,number>={};
  if(template)for(const criterion of template.criteria){const raw=String(form.get(`score_${criterion}`)??'');if(raw){const n=Number(raw);if(!Number.isInteger(n)||n<1||n>5)redirect(`${back}?error=Scores+must+be+1+to+5`);evaluation[criterion]=n;}}
+ const eventId=String(form.get('event_id')??'');if(eventId&&!(await sharedEvents(athlete)).some(e=>e.id===eventId))redirect(`${back}?error=That+event+is+not+shared+with+recruiters`);
  const organization=String(form.get('organization_id')??'');if(organization&&!await organizationFor(s.userId,organization))redirect(`${back}?error=Organization+access+denied`);
  const c=await db().connect();
- try {await c.query('BEGIN');const report=(await c.query('INSERT INTO scouting_reports(athlete_id,author_id,title,notes,film_url,observed_on,template_id,evaluation,measurables,organization_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id',[athlete,s.userId,title,notes,film||null,date,template?.id??null,JSON.stringify(evaluation),String(form.get('measurables')??'').slice(0,3000),organization||null])).rows[0];await c.query("INSERT INTO scouting_activity(athlete_id,actor_id,report_id,action) VALUES($1,$2,$3,'report.created')",[athlete,s.userId,report.id]);await c.query('COMMIT');}catch{await c.query('ROLLBACK');redirect(`${back}?error=Could+not+save+report`);}finally{c.release();}redirect(back);
+ try {await c.query('BEGIN');const report=(await c.query('INSERT INTO scouting_reports(athlete_id,author_id,title,notes,film_url,observed_on,template_id,evaluation,measurables,organization_id,event_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id',[athlete,s.userId,title,notes,film||null,date,template?.id??null,JSON.stringify(evaluation),String(form.get('measurables')??'').slice(0,3000),organization||null,eventId||null])).rows[0];await c.query("INSERT INTO scouting_activity(athlete_id,actor_id,report_id,action) VALUES($1,$2,$3,'report.created')",[athlete,s.userId,report.id]);await c.query('COMMIT');}catch{await c.query('ROLLBACK');redirect(`${back}?error=Could+not+save+report`);}finally{c.release();}redirect(back);
 }
 export async function saveScoutingTemplate(form:FormData) {
  const s=await requireUser();if(s.role!=='recruiter')redirect('/dashboard');
