@@ -25,6 +25,8 @@ const goto=async(p,path)=>p.goto(B+path,{waitUntil:'domcontentloaded',timeout:90
 try {
  await goto(g,`/dashboard/operations/${athlete}`);ok(await g.getByRole('navigation',{name:'Athlete sections'}).locator('a').count()===8,'athlete record exposes all eight sections');
  ok((await goto(x,`/dashboard/operations/${athlete}`)).status()===404,'unrelated account cannot open athlete record');
+ // Fixtures simulate an already completed MFA challenge (creating, sending, voiding and signing agreements all need a recent second factor); actual enrollment is covered by e2e17/18.
+ for(const id of [athlete,guardian])sql(`INSERT INTO user_mfa(user_id,secret_sealed,enabled_at) VALUES('${id}','fixture-sealed-not-used',now())`);
  await goto(g,`/dashboard/documents?athlete=${athlete}`);await g.getByText('Upload document',{exact:true}).first().click();
  await g.locator('input[name=title]').fill('Travel agreement');await g.locator('details select[name=category]').selectOption('contracts');
  const pdf=await PDFDocument.create();pdf.addPage();const bytes=await pdf.save();
@@ -42,8 +44,6 @@ try {
   await openDetails(g,'Add signing field','form:has([name=action][value=field]) [name=recipient_id]');const f=g.locator('form').filter({has:g.locator('[name=action][value=field]')});await f.locator('[name=recipient_id]').selectOption(id);await f.locator('[name=label]').fill('Full name');await f.locator('[name=y]').fill(String(30+i*20));await submitAndWait(g,f.getByRole('button',{name:'Add field'}));
  }
  await submitAndWait(g,g.getByRole('button',{name:'Send for signature'}));ok(sql(`SELECT status FROM signing_envelopes WHERE id='${envelope}'`)==='sent','configured agreement can be sent');
- // Fixtures simulate an already completed MFA challenge; actual enrollment is covered by e2e17/18.
- for(const id of [athlete,guardian])sql(`INSERT INTO user_mfa(user_id,secret_sealed,enabled_at) VALUES('${id}','fixture-sealed-not-used',now())`);
  const half=await pageFor(athlete,true);ok((await half.request.get(`${B}/dashboard/signing/${envelope}/download`)).status()===401,'MFA-pending session cannot download the agreement');await half.context().close();
  for(const [p,name] of [[a,'Athlete'],[g,'Guardian']]){
   await goto(p,`/dashboard/signing/${envelope}`);await submitAndWait(p,p.getByRole('button',{name:'Begin signing'}));await p.getByRole('heading',{name:'Complete your fields'}).waitFor();await p.locator('input[name^=field_]').fill(name);await p.locator('[name=consent]').check();await submitAndWait(p,p.getByRole('button',{name:'Sign agreement',exact:true}));

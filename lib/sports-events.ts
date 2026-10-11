@@ -29,14 +29,11 @@ async function audience(c: PoolClient, eventId: string) {
 }
 
 /**
- * Who may change an event: the family (the adult athlete or a current guardian) of someone attending it. The caller holds the event row lock.
+ * Who may change an event: its organizer only. Edits, cancellation and the attendee list are the organizer's calls, not those of the
+ * families attending; families keep attendance and consent for their own athlete. A deleted or suspended organizer leaves the event frozen.
  */
 async function mayManage(c: PoolClient, userId: string, eventId: string): Promise<boolean> {
-  if (!(await c.query('SELECT 1 FROM events WHERE id=$1', [eventId])).rowCount) return false;
-  // Being the organizer is not authority by itself: a former guardian, or a guardian whose athlete turned 18, loses control with the relationship.
-  for (const a of (await c.query('SELECT athlete_id FROM sports_attendees WHERE event_id=$1', [eventId])).rows)
-    if (await familyAuthority(userId, a.athlete_id, c)) return true;
-  return false;
+  return !!(await c.query('SELECT 1 FROM events e JOIN users u ON u.id=e.organizer_id WHERE e.id=$1 AND e.organizer_id=$2 AND u.deleted_at IS NULL AND u.suspended_at IS NULL', [eventId, userId])).rowCount;
 }
 
 export async function updateEvent(actor: Actor, eventId: string, edit: EventEdit): Promise<Result> {
@@ -122,7 +119,7 @@ export async function addAttendee(actor: Actor, eventId: string, athleteId: stri
   if (!validId(eventId) || !validId(athleteId)) return fail('Unknown event or athlete.');
   return tx(async (c) => {
     const ev = (await c.query('SELECT status FROM events WHERE id=$1 FOR UPDATE', [eventId])).rows[0];
-    if (!ev || !(await mayManage(c, actor.userId, eventId)) || !(await familyAuthority(actor.userId, athleteId, c))) return fail('You can’t add that athlete to this event.');
+    if (!ev || !(await mayManage(c, actor.userId, eventId)) || !(await knownAthlete(c, actor.userId, athleteId))) return fail('You can’t add that athlete to this event.');
     if (ev.status === 'cancelled') return fail('This event was cancelled.');
     const r = await c.query('INSERT INTO sports_attendees(event_id,athlete_id) VALUES($1,$2) ON CONFLICT DO NOTHING', [eventId, athleteId]);
     if (!r.rowCount) return { ok: true as const, message: 'Already attending.' };
@@ -131,12 +128,18 @@ export async function addAttendee(actor: Actor, eventId: string, athleteId: stri
   });
 }
 
-/** Removes an athlete from an event. Only that athlete's own family can, and an event is never left with nobody (cancel it instead). */
+/** An athlete the organizer may put on an event: themselves, a minor they are a current guardian of, or someone whose approved relationship they hold. */
+async function knownAthlete(c: PoolClient, userId: string, athleteId: string): Promise<boolean> {
+  return !!(await c.query(`SELECT 1 WHERE $1::uuid=$2::uuid OR EXISTS(SELECT 1 FROM guardian_links WHERE athlete_id=$2::uuid AND member_id=$1::uuid)
+    OR EXISTS(SELECT 1 FROM athlete_relationships WHERE athlete_id=$2::uuid AND member_id=$1::uuid AND guardian_approved)`, [userId, athleteId])).rowCount;
+}
+
+/** Removes an athlete from an event. The organizer or that athlete's own family can, and an event is never left with nobody (cancel it instead). */
 export async function removeAttendee(actor: Actor, eventId: string, athleteId: string): Promise<Result> {
   if (!validId(eventId) || !validId(athleteId)) return fail('Unknown event or athlete.');
   return tx(async (c) => {
     const ev = (await c.query('SELECT status FROM events WHERE id=$1 FOR UPDATE', [eventId])).rows[0];
-    if (!ev || !(await familyAuthority(actor.userId, athleteId, c))) return fail('You can’t remove that athlete.');
+    if (!ev || !((await mayManage(c, actor.userId, eventId)) || (await familyAuthority(actor.userId, athleteId, c)))) return fail('You can’t remove that athlete.');
     const n = Number((await c.query('SELECT count(*) AS n FROM sports_attendees WHERE event_id=$1', [eventId])).rows[0].n);
     if (n <= 1) return fail('An event needs at least one athlete. Cancel the event instead.');
     const r = await c.query('DELETE FROM sports_attendees WHERE event_id=$1 AND athlete_id=$2', [eventId, athleteId]);

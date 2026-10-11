@@ -31,11 +31,12 @@ describe('editing an event', () => {
     for (const who of [stranger, coach]) expect((await updateEvent(who, ev, edit({ name: 'Hijack' }))).ok, who.role).toBe(false);
     expect((await row()).name).toBe('Renamed');
   });
-  it('a guardian who is not the organizer can edit; so can the athlete (as when creating one), but a minor can never consent or share with recruiters', async () => {
+  it('a guardian or athlete who is not the organizer cannot edit; a minor can never consent', async () => {
     await db().query('UPDATE events SET organizer_id=$2 WHERE id=$1', [ev, stranger.userId]);
-    expect((await updateEvent(guardian, ev, edit({ name: 'By family' }))).ok).toBe(true);
-    expect((await updateEvent(athlete, ev, edit({ name: 'By athlete' }))).ok).toBe(true);
-    expect((await updateEvent(athlete, ev, edit({ recruitingVisible: true }))).ok).toBe(false);
+    expect((await updateEvent(guardian, ev, edit({ name: 'By family' }))).ok).toBe(false);
+    expect((await updateEvent(athlete, ev, edit({ name: 'By athlete' }))).ok).toBe(false);
+    expect((await updateEvent(stranger, ev, edit({ name: 'By organizer' }))).ok).toBe(true);
+    expect((await updateEvent(stranger, ev, edit({ name: 'x', recruitingVisible: true }))).ok).toBe(false);   // no authority over the attendee: cannot share
     expect((await setGuardianConsent(athlete.userId, athlete.userId, ev, true)).ok).toBe(false);
   });
   it('validates times, names, coordinates and the season window', async () => {
@@ -64,10 +65,9 @@ describe('editing an event', () => {
     expect((await updateEvent(guardian, ev, edit({ recruitingVisible: true }))).ok).toBe(true);
     expect((await row()).recruiting_visible).toBe(true);
     await db().query('UPDATE events SET organizer_id=$2 WHERE id=$1', [ev, stranger.userId]);
-    expect((await updateEvent(stranger, ev, edit({ recruitingVisible: false }))).ok).toBe(false);          // an organizer without family authority can no longer change anything
-    expect((await row()).recruiting_visible).toBe(true);
-    expect((await updateEvent(guardian, ev, edit({ recruitingVisible: false }))).ok).toBe(true);           // the family may always WITHDRAW sharing
+    expect((await updateEvent(stranger, ev, edit({ recruitingVisible: false }))).ok).toBe(true);           // the organizer may always WITHDRAW sharing
     expect((await row()).recruiting_visible).toBe(false);
+    expect((await updateEvent(stranger, ev, edit({ recruitingVisible: true }))).ok).toBe(false);           // but cannot turn it on without authority over every attendee
     await db().query('UPDATE events SET organizer_id=$2 WHERE id=$1', [ev, guardian.userId]);
     expect((await updateEvent(guardian, ev, edit({ recruitingVisible: true }))).ok).toBe(true);
     const other = await user('Other', 'athlete');
@@ -134,8 +134,11 @@ describe('multiple athletes and saved venues', () => {
   });
   const count = async () => Number((await db().query('SELECT count(*) AS n FROM sports_attendees WHERE event_id=$1', [ev])).rows[0].n);
   it('adds an athlete only for someone with authority over them, with no consent carried over', async () => {
-    expect((await addAttendee(stranger, ev, sibling.userId)).ok).toBe(false);
+    expect((await addAttendee(stranger, ev, sibling.userId)).ok).toBe(false);    // not the organizer
     expect((await addAttendee(coach, ev, sibling.userId)).ok).toBe(false);
+    await db().query('UPDATE events SET organizer_id=$2 WHERE id=$1', [ev, coach.userId]);
+    expect((await addAttendee(coach, ev, sibling.userId)).ok).toBe(false);      // organizer, but no standing with that athlete
+    await db().query('UPDATE events SET organizer_id=$2 WHERE id=$1', [ev, guardian.userId]);
     expect((await addAttendee(guardian, ev, sibling.userId)).ok).toBe(true);
     expect((await addAttendee(guardian, ev, sibling.userId)).ok).toBe(true);
     expect(await count()).toBe(2);
@@ -174,12 +177,10 @@ describe('events shared for scouting', () => {
 });
 
 describe('organizer without family authority', () => {
-  it('loses control of the event once the guardian link ends', async () => {
-    expect((await updateEvent(guardian, ev, edit({ name: 'Before' }))).ok).toBe(true);
+  it('keeps control of the event (organizer-based authority), but cannot share it with recruiters or add that athlete', async () => {
     await db().query('DELETE FROM athlete_relationships WHERE member_id=$1', [guardian.userId]);
-    expect((await updateEvent(guardian, ev, edit({ name: 'After unlink' }))).ok).toBe(false);
-    expect((await cancelEvent(guardian, ev)).ok).toBe(false);
-    expect((await addAttendee(guardian, ev, athlete.userId)).ok).toBe(false);
-    expect((await row()).name).toBe('Before');
+    expect((await updateEvent(guardian, ev, edit({ name: 'Still mine' }))).ok).toBe(true);
+    expect((await updateEvent(guardian, ev, edit({ name: 'Still mine', recruitingVisible: true }))).ok).toBe(false);
+    expect((await cancelEvent(guardian, ev)).ok).toBe(true);
   });
 });

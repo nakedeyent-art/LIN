@@ -10,7 +10,7 @@ export async function athleteSchedule(s:Session,athleteId:string) {
  if(!validId(athleteId)||!await subjectFor(s,athleteId))return [];
  // Exact travel times are family-only. Sharing academics or health does not grant location access.
  if(!await familyAuthority(s.userId,athleteId))return [];
- return (await db().query(`SELECT e.id,e.name,e.status,d.*,v.name AS venue_name,v.address,a.availability,a.attendance,a.guardian_consent_at
+ return (await db().query(`SELECT e.id,e.name,e.status,e.organizer_id,d.*,v.name AS venue_name,v.address,a.availability,a.attendance,a.guardian_consent_at
  FROM sports_attendees a JOIN events e ON e.id=a.event_id JOIN sports_event_details d ON d.event_id=e.id LEFT JOIN sports_venues v ON v.id=d.venue_id
  WHERE a.athlete_id=$1 ORDER BY d.starts_at DESC LIMIT 200`,[athleteId])).rows;
 }
