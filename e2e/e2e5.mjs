@@ -28,9 +28,9 @@ async function forgot(email) { const p = await newPage(); await p.goto(B + "/for
 const requestedMails = async (n, to) => { for (let i = 0; i < 20; i++) { if (resetLink(to).length >= n) break; await new Promise((r) => setTimeout(r, 500)); } return resetLink(to); };
 
 sql("delete from rate_limits; truncate users cascade");
-const live = await signup("ann@x.com"); sql("update users set email_verified_at=now() where email='ann@x.com'");
+const live = await signup("ann@x.com"); await live.waitForURL((u) => u.pathname !== "/signup", { timeout: 30000 }).catch(() => {}); sql("update users set email_verified_at=now() where email='ann@x.com'");
 await live.goto(B + "/dashboard"); await settle(live);
-rec(new URL(live.url()).pathname === "/dashboard", "setup: ann has a live session");
+rec(new URL(live.url()).pathname === "/dashboard", "setup: ann has a live session", live.url());
 const other = await signup("bob@x.com"); sql("update users set email_verified_at=now() where email='bob@x.com'");
 
 // ---- no enumeration ----
