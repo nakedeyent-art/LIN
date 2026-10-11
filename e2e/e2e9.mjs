@@ -302,7 +302,7 @@ rec(pstate(F) === "released", "once payouts are re-enabled the job pays out", ps
 // =================== G. authorization forgeries ===================
 const bo = await made({ name: "Bo Sponsor", email: "bo@x.com", role: "sponsor" });
 const G = mkDeal("ada@x.com", "Bo deal"); sql(`update deals set counterparty_id='${id("bo@x.com")}' where id='${G}'`);
-await mfaRefresh(ada, B, secrets["ada@x.com"]); await open(ada, `/dashboard/deals/${G}`); await click(ada, "Accept"); await signAs(ada, G, "Ada Adult"); await signAs(bo, G, "Bo Sponsor");
+await mfaRefresh(ada, B, secrets["ada@x.com"]); await open(ada, `/dashboard/deals/${G}`); await click(ada, "Accept"); const boSecret = await mfaEnrollAt(bo, B, OLD); void boSecret; await signAs(bo, G, "Bo Sponsor"); await mfaRefresh(ada, B, secrets["ada@x.com"]); await signAs(ada, G, "Ada Adult");
 const H = mkDeal("ada@x.com", "Sam deal for forgery"); await mfaRefresh(ada, B, secrets["ada@x.com"]); await open(ada, `/dashboard/deals/${H}`); await click(ada, "Accept"); await mfaRefresh(sam, B, samSecret); await signAs(sam, H, "Sam Sponsor"); await mfaRefresh(ada, B, secrets["ada@x.com"]); await signAs(ada, H, "Ada Adult");
 await mfaRefresh(sam, B, samSecret); await open(sam, `/dashboard/deals/${H}`);
 await sam.locator('main form:has(button:has-text("Fund this deal")) [name=deal_id]').evaluate((el, v) => { el.value = v; }, G);
@@ -321,7 +321,7 @@ rec(sql(`select count(*) from contract_signatures where signer_user_id='${id("ad
 sql(`update deals set expires_at = now() - interval '1 minute' where id='${J}'`);
 await mfaRefresh(ada, B, secrets["ada@x.com"]); await open(ada, `/dashboard/deals/${J}/contract`); await see(ada, /expired/i, "an agreement can't be signed after the signing window");
 rec((await ada.locator("main [name=typed_name]").count()) === 0, "no signing form once expired");
-const K = mkDeal("ada@x.com", "Withdraw while signing"); await mfaRefresh(ada, B, secrets["ada@x.com"]); await open(ada, `/dashboard/deals/${K}`); await click(ada, "Accept"); await signAs(sam, K, "Sam Sponsor");
+const K = mkDeal("ada@x.com", "Withdraw while signing"); await mfaRefresh(ada, B, secrets["ada@x.com"]); await open(ada, `/dashboard/deals/${K}`); await click(ada, "Accept"); await mfaRefresh(sam, B, samSecret); await signAs(sam, K, "Sam Sponsor");
 await mfaRefresh(sam, B, samSecret); await open(sam, `/dashboard/deals/${K}`); await click(sam, "Withdraw offer");
 rec(dstate(K) === "withdrawn" && sql(`select (voided_at is not null)::text from contracts where deal_id='${K}'`) === "true", "withdrawing during signing voids the agreement");
 rec(sql(`select count(*) from contract_signatures where contract_id=(select id from contracts where deal_id='${K}')`) === "1", "…but the existing signature stays on record");
