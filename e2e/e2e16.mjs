@@ -34,7 +34,7 @@ const cron = (path = "") => fetch(B + "/api/cron/daily" + path, { method: "POST"
 
 
 
-sql("truncate users cascade; truncate job_runs");
+sql("delete from rate_limits; truncate users cascade; truncate job_runs");
 const sam = await made({ name: "Sam Sponsor", email: "sam@x.com", role: "sponsor" });
 const bob = await made({ name: "Bob Booster", email: "bob@x.com", role: "booster" });
 const ada = await made({ name: "Ada Adult", email: "ada@x.com", role: "athlete", sport: "Soccer", birth_date: "2000-01-01" });

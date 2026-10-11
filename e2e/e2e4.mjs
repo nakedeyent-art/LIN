@@ -45,7 +45,7 @@ async function submit(p, vals, button) {
 }
 const id = (email) => sql(`select id from users where email='${email}'`);
 
-sql("truncate users cascade");
+sql("delete from rate_limits; truncate users cascade");
 // ---------- signup rules ----------
 { const p = await signup({ name: "No Cred", email: "nc@x.com", role: "trainer" }); await see(p, /certification/i, "trainer signup requires a certification");
   const q = await signup({ name: "No Cred", email: "nc2@x.com", role: "manager", declared: "certified_strength_coach" }); await see(q, /certification/i, "certified-coach manager requires a certification"); }

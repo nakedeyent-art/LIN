@@ -36,7 +36,7 @@ const guardians = (athlete) => sql(`select coalesce(string_agg(u.email, ',' orde
 async function invite(p, panelTitle, email) { const c = card(p, panelTitle); await c.locator("[name=email]").fill(email); await c.locator("button:has-text('Invite guardian')").click(); await settle(p); }
 async function accept(p, url) { await p.goto(url); await settle(p); await p.locator("button:has-text('Accept')").click(); await settle(p); }
 
-sql("truncate users cascade");
+sql("delete from rate_limits; truncate users cascade");
 const jordan = await made({ name: "Jordan Reyes", email: "jordan@x.com", role: "athlete", sport: "Basketball", position: "PG", birth_date: "2010-03-04", guardian_email: "maria@x.com" });
 const maria = await made({ name: "Maria Reyes", email: "maria@x.com", role: "parent" });
 const dan = await made({ name: "Dan Reyes", email: "dan@x.com", role: "parent" });

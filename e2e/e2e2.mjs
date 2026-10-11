@@ -1,6 +1,6 @@
 // Ported to the shared runtime: disposable local database (E2E_DATABASE_URL, must end in _e2e), local mail log and base URL come from ./runtime.mjs.
 import * as _rt from "./runtime.mjs";
-_rt.sql("truncate users cascade");   // disposable *_e2e database only (runtime.mjs refuses anything else)
+_rt.sql("delete from rate_limits; truncate users cascade");   // disposable *_e2e database only (runtime.mjs refuses anything else)
 import { chromium } from "playwright";
 import { readFileSync } from "node:fs";
 import { execSync } from "node:child_process";

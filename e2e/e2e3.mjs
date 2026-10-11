@@ -3,6 +3,7 @@ import * as _rt from "./runtime.mjs";
 import { chromium } from "playwright";
 import { readFileSync } from "node:fs";
 import { execSync } from "node:child_process";
+import { mfaEnrollAt } from "./mfa-helper.mjs";
 const B = _rt.B;
 const br = await chromium.launch(_rt.browserOptions);
 let fails = 0;
@@ -25,7 +26,7 @@ async function signup(f) {
   return p;
 }
 
-sql("truncate users cascade");
+sql("delete from rate_limits; truncate users cascade");
 const sponsor = await signup({ name: "Sam Sponsor", email: "sam@x.com", role: "sponsor" });
 const booster = await signup({ name: "Bo Booster", email: "bo@x.com", role: "booster" });
 const jordan = await signup({ name: "Jordan Reyes", email: "jordan@x.com", role: "athlete", sport: "Basketball", position: "PG", birth_date: "2010-03-04", guardian_email: "maria@x.com" });
@@ -112,13 +113,14 @@ check("forged self-approval by minor rejected", sql("select status from deals"),
 
 await maria.goto(B + "/dashboard/deals"); await settle(maria);
 check("guardian sees waiting notice", await text(maria), /1 deal waiting for your decision/);
+await mfaEnrollAt(maria, B);   // approving and signing are money decisions: a recent second factor is required
 await maria.goto(dealUrl); await settle(maria);
 check("guardian sees full athlete name", (await text(maria)).includes("Jordan Reyes"), true);
 await maria.click("button:has-text('Approve (guardian)')"); await settle(maria);
 check("guardian approve -> awaiting_signature (not active)", sql("select status from deals"), "awaiting_signature");
 check("guardian_approved_by recorded", sql("select u.email from deals d join users u on u.id=d.guardian_approved_by"), "maria@x.com");
 await signAs(maria, dealUrl, "Maria Reyes"); check("one signature: still awaiting_signature", sql("select status from deals"), "awaiting_signature");
-await signAs(sponsor, dealUrl, "Sam Sponsor"); check("guardian + sponsor signed -> active", sql("select status from deals"), "active");
+await mfaEnrollAt(sponsor, B); await signAs(sponsor, dealUrl, "Sam Sponsor"); check("guardian + sponsor signed -> active", sql("select status from deals"), "active");
 await sponsor.goto(dealUrl); await settle(sponsor);
 await sponsor.click("button:has-text('Mark completed')"); await settle(sponsor);
 check("sponsor completes active deal", sql("select status from deals"), "completed");

@@ -33,7 +33,7 @@ const status = async (p, path) => (await p.goto(B + path)).status();
 const cron = (path = "") => fetch(B + "/api/cron/daily" + path, { method: "POST", headers: { Authorization: "Bearer test-cron-secret-0123456789abcdef" } }).then((r) => r.json());
 
 
-sql("truncate users cascade; truncate job_runs");
+sql("delete from rate_limits; truncate users cascade; truncate job_runs");
 const sam = await made({ name: "Sam Sponsor", email: "sam@x.com", role: "sponsor" });
 const ada = await made({ name: "Ada Adult", email: "ada@x.com", role: "athlete", sport: "Soccer", birth_date: "2000-01-01" });
 const jordan = await made({ name: "Jordan Reyes", email: "jordan@x.com", role: "athlete", sport: "Basketball", birth_date: "2010-03-04", guardian_email: "maria@x.com" });

@@ -74,7 +74,19 @@ export async function dealAction(formData: FormData) {
   const action = str(formData, "action") as DealAction;
   const back = (msg: string, key = "error"): never => redirect(`/dashboard/deals/${dealId}?${key}=${encodeURIComponent(msg)}`);
   if (!ALL_ACTIONS.includes(action) || !/^[0-9a-f-]{36}$/i.test(dealId)) redirect("/dashboard/deals");
-  if (["approve", "complete", "request_cancel", "agree_cancel"].includes(action)) await requireRecentMfa(s, `/dashboard/deals/${dealId}`);
+  if (["approve", "complete", "request_cancel", "agree_cancel"].includes(action)) {
+    // Standing first, then the second factor: someone who may not take this action gets the permission error, not an MFA prompt.
+    const peek = (await db().query(
+      `SELECT d.id, d.title, d.amount_cents::float8 AS amount_cents, d.deliverables, d.status, d.expires_at, d.created_at, d.attested_at,
+              d.athlete_id, d.counterparty_id, '' AS athlete_name, COALESCE(ap.birth_date > CURRENT_DATE - INTERVAL '18 years', FALSE) AS athlete_minor, '' AS counterparty_name, '' AS counterparty_role
+         FROM deals d LEFT JOIN athlete_profiles ap ON ap.user_id = d.athlete_id WHERE d.id=$1`, [dealId])).rows[0] as DealRow | undefined;
+    if (!peek) redirect("/dashboard/deals");
+    const who = await capacityOn(s.userId, peek!);
+    if (!who) redirect("/dashboard/deals");
+    const pre = applyAction(await dealContext(peek!), who, action);
+    if (!pre.ok) back(pre.error);
+    await requireRecentMfa(s, `/dashboard/deals/${dealId}`);
+  }
 
   const client = await db().connect();
   let newStatus: DealStatus, oldStatus: DealStatus;

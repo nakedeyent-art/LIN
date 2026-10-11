@@ -32,7 +32,7 @@ const mailsTo = (to, subj) => readFileSync(LOG, "utf8").slice(logStart).split("[
 const status = async (p, path) => (await p.goto(B + path)).status();
 const cron = (path = "") => fetch(B + "/api/cron/daily" + path, { method: "POST", headers: { Authorization: "Bearer test-cron-secret-0123456789abcdef" } }).then((r) => r.json());
 
-sql("truncate users cascade; truncate job_runs");
+sql("delete from rate_limits; truncate users cascade; truncate job_runs");
 const sam = await made({ name: "Sam Sponsor", email: "sam@x.com", role: "sponsor" });
 const ada = await made({ name: "Ada Adult", email: "ada@x.com", role: "athlete", sport: "Soccer", birth_date: "2000-01-01" });
 const jordan = await made({ name: "Jordan Reyes", email: "jordan@x.com", role: "athlete", sport: "Basketball", birth_date: "2010-03-04", guardian_email: "maria@x.com" });
@@ -48,7 +48,7 @@ const offerTo = async (email, amount = "2500") => { await sam.goto(`${B}/dashboa
   await sam.fill("[name=deliverables]", "Two Instagram posts and one in-store appearance in November."); await sam.check("[name=attest]"); await sam.locator("main button:has-text('Send offer')").click(); await settle(sam); };
 await offerTo("ada@x.com");
 const A = sql("select id from deals where athlete_id='" + id("ada@x.com") + "'");
-rec(/Notifications \(1\)/.test(await bell(ada)), "athlete's bell shows 1 after an offer");
+rec(/Notifications \(1\)/.test(await bell(ada)), "athlete's bell shows 1 after an offer", `bell=${await bell(ada)} deals=${sql("select count(*) from deals")} notes=${sql("select string_agg(title, ' | ') from notifications")}`);
 await ada.goto(B + "/dashboard/notifications"); await settle(ada);
 await see(ada, /New offer: "Camp appearance"/, "notification names the offer");
 rec(!/2,?500|\$/.test(await text(ada).then((t) => t.replace(/Notifications never include amounts or message text\./, ""))), "notification text contains no amount");

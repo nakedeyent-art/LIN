@@ -23,7 +23,7 @@ const LOG = _rt.LOG;
 const all = () => readFileSync(LOG, "utf8").split("[mail:dev]").filter((m) => /New message on a NIL deal/.test(m));
 const base = all().length; const mails = () => all().slice(base);
 
-sql("truncate users cascade");
+sql("delete from rate_limits; truncate users cascade");
 const sam = await made({ name: "Sam Sponsor", email: "sam@x.com", role: "sponsor" });
 const ada = await made({ name: "Ada Adult", email: "ada@x.com", role: "athlete", sport: "Soccer", birth_date: "2000-01-01" });
 const jordan = await made({ name: "Jordan Reyes", email: "jordan@x.com", role: "athlete", sport: "Basketball", birth_date: "2010-03-04", guardian_email: "maria@x.com" });

@@ -57,7 +57,7 @@ const srv = http.createServer((req, res) => {
   else { res.statusCode = 404; res.end("no"); }
 }).listen(4020);
 
-sql("truncate users cascade; truncate news_sources cascade; truncate job_runs");
+sql("delete from rate_limits; truncate users cascade; truncate news_sources cascade; truncate job_runs");
 const sam = await made({ name: "Sam Sponsor", email: "sam@x.com", role: "sponsor" });
 const jordan = await made({ name: "Jordan Reyes", email: "jordan@x.com", role: "athlete", sport: "Basketball", birth_date: "2010-03-04", guardian_email: "maria@x.com" });
 const root = await made({ name: "Root Admin", email: "root@x.com", role: "parent" });

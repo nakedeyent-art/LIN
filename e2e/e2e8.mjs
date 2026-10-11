@@ -20,7 +20,7 @@ const state = (email) => sql(`select (adult_notice_sent_at is not null)::text||'
 const D = (days) => `(current_date - interval '18 years' - interval '${days} days')::date`;   // turned 18 `days` ago (negative = in the future)
 
 if (PHASE === "1") {
-  sql("truncate users cascade; truncate job_runs");
+  sql("delete from rate_limits; truncate users cascade; truncate job_runs");
   const sam = mkUser("sam@x.com", "Sam Sponsor", "sponsor");
   // --- Jordan: the one who should get emails ---
   const jordan = mkAthlete("jordan@x.com", "Jordan Reyes", D(3), "now() - interval '400 days'");
@@ -96,7 +96,7 @@ if (PHASE === "1") {
 }
 
 if (PHASE === "2") {   // server running with a RESEND_API_KEY that can't deliver → every send fails
-  sql("truncate users cascade; truncate job_runs");
+  sql("delete from rate_limits; truncate users cascade; truncate job_runs");
   const flaky = mkAthlete("flaky@x.com", "Flaky Athlete", D(2), "now() - interval '1 year'"); guard(flaky, mkUser("fp@x.com", "Flaky Parent", "parent"));
   const r1 = await run();
   rec(JSON.stringify(r1.json?.jobs?.["adult-transition"]) === JSON.stringify({ processed: 0, skipped: 0, failed: 1 }) && r1.json?.status === "failed", "failed delivery is reported as failed", JSON.stringify(r1.json));
