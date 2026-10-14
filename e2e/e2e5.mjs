@@ -1,16 +1,18 @@
+// Ported to the shared runtime: disposable local database (E2E_DATABASE_URL, must end in _e2e), local mail log and base URL come from ./runtime.mjs.
+import * as _rt from "./runtime.mjs";
 import { chromium } from "playwright";
 import { readFileSync } from "node:fs";
 import { execSync } from "node:child_process";
-const B = "http://localhost:3113";
-const br = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium" });
+const B = _rt.B;
+const br = await chromium.launch(_rt.browserOptions);
 let fails = 0, total = 0;
 const rec = (ok, k, extra = "") => { total++; if (!ok) fails++; console.log((ok ? "PASS " : "FAIL ") + k.padEnd(62) + (ok ? "" : String(extra).slice(0, 150))); };
-const sql = (q) => execSync(`su postgres -c "psql lin -At -q"`, { input: q }).toString().trim();
+const sql = _rt.sql;
 const settle = async (p) => { await p.waitForLoadState("networkidle"); await p.waitForTimeout(1500); await p.waitForLoadState("networkidle"); };
 const text = async (p) => (await p.locator("main, .center").first().innerText().catch(() => "")).replace(/\s+/g, " ");
 async function see(p, re, k) { let t = ""; for (let i = 0; i < 40; i++) { t = await text(p); if (re.test(t)) return rec(true, k); await p.waitForTimeout(500); } rec(false, k, `got=${t}`); }
-const START = readFileSync("/tmp/claude-0/mail.log", "utf8").length; // ignore mail from earlier runs
-const mail = () => readFileSync("/tmp/claude-0/mail.log", "utf8").slice(START).split("[mail:dev]").filter((m) => m.includes(" to="));
+const START = readFileSync(_rt.LOG, "utf8").length; // ignore mail from earlier runs
+const mail = () => readFileSync(_rt.LOG, "utf8").slice(START).split("[mail:dev]").filter((m) => m.includes(" to="));
 const mailsTo = (to, subj) => mail().filter((m) => m.includes(`to=${to} subject=${subj}`));
 const resetLink = (to) => mailsTo(to, "Reset your LIN password").map((m) => m.match(/http:\/\/localhost:3113\/reset-password\?token=[\w-]+/)?.[0]).filter(Boolean);
 const newPage = async () => (await br.newContext()).newPage();
@@ -25,10 +27,10 @@ async function login(p, email, pw) { await p.goto(B + "/login"); await p.fill("[
 async function forgot(email) { const p = await newPage(); await p.goto(B + "/forgot-password"); await p.fill("[name=email]", email); const t0 = Date.now(); await p.click("button[type=submit]"); await p.waitForURL(/sent=1|error=/, { timeout: 60000 }); const ms = Date.now() - t0; await settle(p); return { p, ms }; }
 const requestedMails = async (n, to) => { for (let i = 0; i < 20; i++) { if (resetLink(to).length >= n) break; await new Promise((r) => setTimeout(r, 500)); } return resetLink(to); };
 
-sql("truncate users cascade");
-const live = await signup("ann@x.com"); sql("update users set email_verified_at=now() where email='ann@x.com'");
+sql("delete from rate_limits; truncate users cascade");
+const live = await signup("ann@x.com"); await live.waitForURL((u) => u.pathname !== "/signup", { timeout: 30000 }).catch(() => {}); sql("update users set email_verified_at=now() where email='ann@x.com'");
 await live.goto(B + "/dashboard"); await settle(live);
-rec(new URL(live.url()).pathname === "/dashboard", "setup: ann has a live session");
+rec(new URL(live.url()).pathname === "/dashboard", "setup: ann has a live session", live.url());
 const other = await signup("bob@x.com"); sql("update users set email_verified_at=now() where email='bob@x.com'");
 
 // ---- no enumeration ----
@@ -55,10 +57,10 @@ await see(lp, /Choose a new password.*ann@x\.com/, "link shows the reset form fo
 
 // ---- validation doesn't burn the token ----
 const fill = async (p, pw, confirm) => { await p.fill("[name=password]", pw); await p.fill("[name=confirm]", confirm ?? pw); await p.click("button[type=submit]"); await settle(p); };
-await fill(lp, "short", "short"); await see(lp, /at least 10 characters/, "short password rejected");
+await fill(lp, "short", "short"); rec((await lp.locator("[name=password]").evaluate((e) => !e.checkValidity())) || /at least 10 characters/.test(await text(lp)), "short password rejected (browser or server)");
 await fill(lp, NEW, NEW + "x"); await see(lp, /don't match/, "mismatched confirmation rejected");
 await fill(lp, "Password1234!", "Password1234!"); await see(lp, /too common/, "common password rejected");
-await fill(lp, "ann@x.com", "ann@x.com"); await see(lp, /can't be your email|too short|at least 10/i, "email-as-password rejected");
+await fill(lp, "ann@x.com", "ann@x.com"); rec((await lp.locator("[name=password]").evaluate((e) => !e.checkValidity())) || /can't be your email|too short|at least 10/i.test(await text(lp)), "email-as-password rejected (browser or server)");
 rec(sql("select count(*) from email_tokens where used_at is not null") === "0", "validation errors didn't use up the token");
 
 // ---- lock + live session + unverified, then reset ----
@@ -68,7 +70,7 @@ await login(victim, "ann@x.com", OLD); await see(victim, /Too many attempts/, "a
 sql("update users set email_verified_at = NULL where email='ann@x.com'");
 await fill(lp, NEW);
 await see(lp, /Password changed/, "reset succeeds → login page with confirmation");
-rec(sql("select failed_logins||':'||(locked_until is null) from users where email='ann@x.com'") === "0:t", "lockout cleared by reset");
+rec(sql("select failed_logins||':'||(locked_until is null) from users where email='ann@x.com'") === "0:true", "lockout cleared by reset", sql("select failed_logins::text||':'||coalesce(locked_until::text,'null')||' rl='||(select coalesce(string_agg(key||'='||hits,','),'') from rate_limits) from users where email='ann@x.com'"));
 rec(sql("select email_verified_at is not null from users where email='ann@x.com'") === "t", "reset proves mailbox control → email verified");
 rec(sql("select count(*) from sessions s join users u on u.id=s.user_id where u.email='ann@x.com'") === "0", "all of ann's sessions were ended");
 await live.goto(B + "/dashboard"); await settle(live);

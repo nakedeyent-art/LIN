@@ -2,4 +2,10 @@ node_modules
 .next
 next-env.d.ts
 *.tsbuildinfo
+.test-output
 .env*.local
+
+# Local environment credentials; keep only the documented template.
+.env
+.env.*
+!.env.example

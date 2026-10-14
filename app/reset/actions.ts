@@ -2,7 +2,8 @@
 import { redirect } from "next/navigation";
 import { after } from "next/server";
 import { hashPassword, isValidEmail, normalizeEmail } from "@/lib/crypto";
-import { sendMail } from "@/lib/mailer";
+import { sendNotice } from "@/lib/outbox";
+import { LIMITS, limitByIp, waitMessage } from "@/lib/ratelimit";
 import { validateNewPassword } from "@/lib/password-policy";
 import { completePasswordReset, peekResetToken, sendPasswordReset } from "@/lib/verification";
 
@@ -13,6 +14,8 @@ import { completePasswordReset, peekResetToken, sendPasswordReset } from "@/lib/
 export async function requestPasswordReset(formData: FormData) {
   const email = normalizeEmail(String(formData.get("email") ?? ""));
   if (!isValidEmail(email)) redirect(`/forgot-password?error=${encodeURIComponent("Enter a valid email address.")}`);
+  const rl = await limitByIp(LIMITS.resetRequest);
+  if (!rl.allowed) redirect(`/forgot-password?error=${encodeURIComponent(waitMessage(rl.retryAfterSeconds))}`);
   after(async () => {
     try { await sendPasswordReset(email); } catch (e) { console.error("password reset email failed", e); }
   });
@@ -35,7 +38,7 @@ export async function resetPassword(formData: FormData) {
   const done = await completePasswordReset(token, await hashPassword(password));
   if (!done) redirect(`/reset-password?token=${encodeURIComponent(token)}`);
   try {
-    await sendMail(done!.email, "Your LIN password was changed",
+    await sendNotice(done!.email, "Your LIN password was changed",
       `Hi ${done!.name},\n\nYour password was just changed and you've been signed out everywhere. If this was you, no action is needed.\n` +
       `If it wasn't, reset your password again right away from the login page.`);
   } catch (e) { console.error("password-changed notice failed", e); }

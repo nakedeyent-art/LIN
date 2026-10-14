@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { hashPassword, hashToken, isValidEmail, newSessionToken, normalizeEmail, verifyPassword } from "@/lib/crypto";
 import { checkPassword } from "@/lib/reauth";
 import { appUrl, sendMail } from "@/lib/mailer";
+import { sendNotice } from "@/lib/outbox";
 import { validateNewPassword } from "@/lib/password-policy";
 import { DELETE_PHRASE, maskEmail, validateAthleteProfile, validateDisplayName } from "@/lib/account";
 import { destroySession, endOtherSessions, requireUser } from "@/lib/session";
@@ -14,7 +15,8 @@ import { MONEY_IN_FLIGHT } from "@/lib/payment-rules";
 
 const str = (f: FormData, k: string) => String(f.get(k) ?? "").trim();
 const done = (key: "msg" | "error", m: string): never => redirect(`/dashboard/settings?${key}=${encodeURIComponent(m)}`);
-const notify = async (to: string, subject: string, text: string) => { try { await sendMail(to, subject, text); } catch (e) { console.error("account notice failed", e); } };
+const notify = async (to: string, subject: string, text: string) => { try { await sendMail(to, subject, text); } catch (e) { console.error("account notice failed", e); } };   // direct: for messages carrying a live link
+const notice = (to: string, subject: string, text: string) => sendNotice(to, subject, text);
 
 async function reauth(userId: string, password: string): Promise<{ email: string; name: string; hash: string }> {
   const r = await checkPassword(userId, password);
@@ -55,7 +57,7 @@ export async function changePassword(formData: FormData) {
   if (await verifyPassword(next, me.hash)) done("error", "Choose a password you haven't been using.");
   await db().query("UPDATE users SET password_hash=$2 WHERE id=$1", [s.userId, await hashPassword(next)]);
   await endOtherSessions(s.userId);
-  await notify(me.email, "Your LIN password was changed",
+  await notice(me.email, "Your LIN password was changed",
     `Hi ${me.name},\n\nYour password was just changed and your other devices were signed out. If this wasn't you, reset your password right away from the login page.`);
   done("msg", "Password changed. Your other devices were signed out.");
 }
@@ -89,7 +91,7 @@ export async function requestEmailChange(formData: FormData) {
       [hashToken(token), s.userId, newEmail]);
     await notify(newEmail, "Confirm your new LIN email address",
       `Hi ${me.name},\n\nConfirm that this is your new email address for LIN (you must be logged in to your account in this browser):\n${appUrl()}/confirm-email?token=${token}\n\nThis link works once and expires in 1 hour. If you didn't ask for this, ignore this email.`);
-    await notify(me.email, "An email change was requested on your LIN account",
+    await notice(me.email, "An email change was requested on your LIN account",
       `Hi ${me.name},\n\nSomeone (hopefully you) asked to change your account email to ${maskEmail(newEmail)}. Nothing changes until that address is confirmed.\nIf this wasn't you, change your password now.`);
   }
   done("msg", `If ${newEmail} can be used, we've sent a confirmation link to it. Your email won't change until you open it.`);
@@ -137,7 +139,7 @@ export async function deleteAccount(formData: FormData) {
     await client.query("COMMIT");
   } catch (e) { await client.query("ROLLBACK"); throw e; } finally { client.release(); }
 
-  await notify(me.email, "Your LIN account was deleted",
+  await notice(me.email, "Your LIN account was deleted",
     `Hi ${me.name},\n\nYour LIN account has been deleted and your personal data removed. Records of deals you took part in are kept without your name, as the other party's records.\nIf you didn't do this, contact support immediately.`);
   await destroySession();
   redirect("/login?deleted=1");

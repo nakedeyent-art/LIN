@@ -1,13 +1,15 @@
+// Ported to the shared runtime: disposable local database (E2E_DATABASE_URL, must end in _e2e), local mail log and base URL come from ./runtime.mjs.
+import * as _rt from "./runtime.mjs";
 import { mfaEnroll } from "./mfa-helper.mjs";
 import { chromium } from "playwright";
 import { execSync, spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
-const B = "http://localhost:3113";
-const br = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium" });
+const B = _rt.B;
+const br = await chromium.launch(_rt.browserOptions);
 let fails = 0, total = 0;
 const rec = (ok, k, extra = "") => { total++; if (!ok) fails++; console.log((ok ? "PASS " : "FAIL ") + k.padEnd(76) + (ok ? "" : String(extra).slice(0, 300))); };
-const sql = (q) => execSync(`su postgres -c "psql lin -At -q"`, { input: q }).toString().trim();
-const dbErr = (q) => { const r = spawnSync("su", ["postgres", "-c", "psql lin -At -q -v ON_ERROR_STOP=1"], { input: q }); return (r.stderr?.toString() ?? "") + (r.status ? " [exit " + r.status + "]" : ""); };
+const sql = _rt.sql;
+const dbErr = _rt.dbErr;
 const settle = async (p) => { await p.waitForLoadState("networkidle"); await p.waitForTimeout(1200); await p.waitForLoadState("networkidle"); };
 const text = async (p) => (await p.locator("main, .center").first().innerText({ timeout: 2500 }).catch(() => "")).replace(/\s+/g, " ");
 async function see(p, re, k) { re = new RegExp(re.source, "i"); let t = ""; for (let i = 0; i < 12; i++) { t = await text(p); if (re.test(t)) return rec(true, k); await p.waitForTimeout(500); } rec(false, k, `got=${t}`); }
@@ -18,7 +20,7 @@ async function made(f) {
   for (const k of ["sport", "birth_date", "guardian_email"]) if (f[k]) await p.fill(`[name=${k}]`, f[k]);
   await p.click("button[type=submit]"); await settle(p); sql(`update users set email_verified_at=now() where email='${f.email}'`); await p.goto(B + "/dashboard"); await settle(p); return p;
 }
-const LOG = "/tmp/claude-0/mail.log";
+const LOG = _rt.LOG;
 const all = () => readFileSync(LOG, "utf8").split("[mail:dev]").filter((m) => /subject=(New message on a NIL deal|NIL deal update|You have a new NIL offer)/.test(m));
 const base = all().length; const mails = () => all().slice(base);
 
@@ -30,7 +32,7 @@ const mailsTo = (to, subj) => readFileSync(LOG, "utf8").slice(logStart).split("[
 const status = async (p, path) => (await p.goto(B + path)).status();
 const cron = (path = "") => fetch(B + "/api/cron/daily" + path, { method: "POST", headers: { Authorization: "Bearer test-cron-secret-0123456789abcdef" } }).then((r) => r.json());
 
-sql("truncate users cascade; truncate job_runs");
+sql("delete from rate_limits; truncate users cascade; truncate job_runs");
 const sam = await made({ name: "Sam Sponsor", email: "sam@x.com", role: "sponsor" });
 const ada = await made({ name: "Ada Adult", email: "ada@x.com", role: "athlete", sport: "Soccer", birth_date: "2000-01-01" });
 const jordan = await made({ name: "Jordan Reyes", email: "jordan@x.com", role: "athlete", sport: "Basketball", birth_date: "2010-03-04", guardian_email: "maria@x.com" });
@@ -46,7 +48,7 @@ const offerTo = async (email, amount = "2500") => { await sam.goto(`${B}/dashboa
   await sam.fill("[name=deliverables]", "Two Instagram posts and one in-store appearance in November."); await sam.check("[name=attest]"); await sam.locator("main button:has-text('Send offer')").click(); await settle(sam); };
 await offerTo("ada@x.com");
 const A = sql("select id from deals where athlete_id='" + id("ada@x.com") + "'");
-rec(/Notifications \(1\)/.test(await bell(ada)), "athlete's bell shows 1 after an offer");
+rec(/Notifications \(1\)/.test(await bell(ada)), "athlete's bell shows 1 after an offer", `bell=${await bell(ada)} deals=${sql("select count(*) from deals")} notes=${sql("select string_agg(title, ' | ') from notifications")}`);
 await ada.goto(B + "/dashboard/notifications"); await settle(ada);
 await see(ada, /New offer: "Camp appearance"/, "notification names the offer");
 rec(!/2,?500|\$/.test(await text(ada).then((t) => t.replace(/Notifications never include amounts or message text\./, ""))), "notification text contains no amount");
@@ -113,7 +115,7 @@ for (const [who, p] of [["sponsor", sam], ["athlete", ada]]) {
 rec((await (await br.newContext()).newPage().then((p) => status(p, "/admin"))) === 404, "signed-out visitor gets 404 on /admin");
 await root.goto(B + "/dashboard"); await settle(root);
 rec((await root.locator(".side nav a:has-text('Admin')").count()) === 0, "no Admin link before being granted");
-const run = (args) => spawnSync("node", ["scripts/make-admin.mjs", ...args], { cwd: "/home/user/LIN", env: { ...process.env, DATABASE_URL: "postgres://lin:lin@localhost:5432/lin" } });
+const run = (args) => _rt.mk(["make-admin.mjs", ...args]);
 sql("update users set email_verified_at=null where email='root@x.com'");
 rec(run(["root@x.com"]).status === 1, "make-admin refuses an unverified account");
 sql("update users set email_verified_at=now() where email='root@x.com'");

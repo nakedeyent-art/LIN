@@ -205,10 +205,10 @@ node --env-file-if-exists=.env.local scripts/make-admin.mjs you@example.com --re
 - **Not built:** IP allow-listing, hardware security keys / passkeys (WebAuthn), roles below "full admin", approving
   credentials, refunds/payouts initiated by an admin, content moderation, deleting accounts on someone's behalf, a dispute-resolution workflow.
 
-### Two-factor authentication (admins: required; everyone else: optional)
+### Two-factor authentication and sensitive actions
 Any account can turn on an authenticator-app second step under **Settings → Two-factor authentication** (`/mfa/setup`); admins can't use the panel without it.
 Works with any TOTP app (Google Authenticator, 1Password, Authy, …). Roles that approve deals and money (sponsor, booster, gym owner, parent/guardian) get a small
-nudge banner; nothing is forced on other roles.
+nudge banner. Ordinary browsing is optional for non-admins; signatures, guardian approvals, funding, payout setup, payee changes and funded cancellations require enrollment and MFA within ten minutes. The action must be reviewed and submitted again after verification.
 - **Enrolling:** scan the QR code, enter the first code **and your password**, then save 10 one-time recovery codes (shown once; only hashes stored). Enrolling signs out every
   other device (so a stolen cookie can't quietly add its own second factor) and emails the owner.
 - **Signing in:** with it on, the password is only step one. The new session is **not signed in at all** until the code is entered: `getSession()` returns null for it, so every page,
@@ -219,10 +219,10 @@ nudge banner; nothing is forced on other roles.
   stored **encrypted (AES-256-GCM) with `MFA_ENCRYPTION_KEY`** and bound to its owner; recovery-code use, enabling, disabling and regenerating are emailed and listed in the person's
   own **Recent security activity**; turning it off or regenerating codes needs the password plus a live code (a recovery code works for turning it off).
 - **Server key:** set `MFA_ENCRYPTION_KEY` (`openssl rand -base64 32`) in production — the app refuses to enrol or verify without it. Changing the key makes existing seeds unreadable
-  (everyone must be reset and re-enrol). Back it up with your other secrets.
-- **Locked out (lost phone *and* recovery codes):** ordinary accounts — an admin opens the person's page (*Admin → Users*) and uses **Remove two-factor** (needs the admin's password and a written
+  (TOTP verification fails until recovery/re-enrollment). Hashed recovery codes remain usable even if an existing seed cannot be decrypted. Back up the key with your other secrets.
+- **Locked out (lost phone *and* recovery codes):** ordinary accounts — an admin opens the person's page (*Admin → Users*) and uses **Remove two-factor** (needs the admin's password, MFA within ten minutes and a written
   reason; verify the person out-of-band first; it signs them out everywhere, emails them, and is audited and shown in their activity). Admin accounts — someone with server access runs
-  `node --env-file-if-exists=.env.local scripts/reset-admin-mfa.mjs admin@example.com "reason"`. Revoking admin rights (`make-admin.mjs --revoke`) also deletes their two-factor data.
+  `node --env-file-if-exists=.env.local scripts/reset-admin-mfa.mjs admin@example.com "reason"`. Support reset signs out all sessions and requires MFA re-enrollment before dashboard or file access. Revoking admin rights (`make-admin.mjs --revoke`) preserves MFA and signs out existing sessions.
 - **Honest limits:** support reset is a human process, so it's only as strong as the identity check behind it (there's no self-service "email me a reset" on purpose — it would let anyone with
   the person's inbox undo the second factor); codes can be phished in real time like any one-time code (passkeys/WebAuthn would resist that and aren't built); no "remember this device";
   an attacker who knows the password can trigger the 15-minute lock on the second step; SMS codes are deliberately not offered.
@@ -238,6 +238,14 @@ curl -fsS -X POST -H "Authorization: Bearer $CRON_SECRET" "https://your-app.exam
 - **Anywhere else:** a system cron entry, a GitHub Actions `schedule:` workflow, or your host's scheduler running the `curl` above.
 Dates are evaluated in UTC. Running it more often is harmless (idempotent); missing a few days is fine (the 30-day window
 catches up). Add new jobs to `JOBS` in `lib/jobs/runner.ts` — each must be idempotent and safe to retry.
+
+## Storage, scanning and passkeys (added on this branch)
+
+- `UPLOAD_SCANNER=clamav://host:3310` scans uploads (fails closed). `UPLOAD_SCAN_MODE=async` accepts uploads into quarantine; the daily `upload-scan` job releases clean files and quarantines infected ones (never served or signed).
+- `OBJECT_STORAGE_ENDPOINT/BUCKET/ACCESS_KEY/SECRET_KEY` move document bytes to private S3-compatible storage; downloads still stream through authenticated routes. Leave empty to keep files in Postgres.
+- Passkeys: with an authenticator app enrolled, people can add passkeys in Settings (fresh code required) and use them at the second step. Turning two-factor off removes them.
+- Event times are stored with the venue's time zone; the schedule shows venue time and can show the viewer's.
+- Browser suites: `npm run test:e2e` (e2e18), `test:e2e:admin` (e2e17), `test:e2e:settings` (e2e6), `node e2e/e2e19.mjs` (operations, signing, schedule, travel), `test:e2e:limits` (e2e20, start the app with `E2E_TRUST_PROXY=1`), `test:e2e:passkeys` (e2e21).
 
 ## Known gaps (do before real users)
 - Set `APP_URL`, `RESEND_API_KEY` and `MAIL_FROM` for production; in production the app refuses to send without them (dev mode logs emails instead).
@@ -273,3 +281,9 @@ catches up). Add new jobs to `JOBS` in `lib/jobs/runner.ts` — each must be ide
 4. Wearable sync (Apple Health, Health Connect, WHOOP); AI food-photo macros
 5. Video: guided drills, form-video upload and annotation
 6. Legal review per state/association (SPARTA, NFHS, NCAA) before launch
+
+## Connected athlete operations
+
+The local operations expansion adds athlete records, versioned documents, ordered Forg3 signing, deal workspaces, sports routes, private scouting, tasks and expenses. Start at **Dashboard → Today** or **Athlete operations**. Apply migrations through `029_deal_work_items.sql` using `npm run db:migrate`.
+
+See [implementation status and limitations](docs/OPERATIONS_IMPLEMENTATION.md), [current handoff](docs/HANDOFF.md), [Gemini review packet](docs/GEMINI_REVIEW_HANDOFF.md), and [local test instructions](e2e/README.md). Office previews are text-based, maps show stop sequences, reminders are currently in-app, and uploads still require production scanning/storage work.

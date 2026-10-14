@@ -1,3 +1,4 @@
+import { BLOCKED_SQL } from "@/lib/blocksdb";
 import type { ReactNode } from "react";
 import Link from "next/link";
 import type { Session } from "@/lib/session";
@@ -176,7 +177,8 @@ async function Recruiter({ s }: { s: Session }) {
     `SELECT b.id, b.stage, u.id AS athlete_id, u.full_name, ap.sport, ap.position, ap.level, ap.grad_year,
             ap.birth_date > CURRENT_DATE - INTERVAL '18 years' AS minor
        FROM recruiting_board b JOIN users u ON u.id = b.athlete_id JOIN athlete_profiles ap ON ap.user_id = u.id
-      WHERE b.recruiter_id=$1 ORDER BY b.updated_at DESC`, [s.userId])).rows;
+      WHERE b.recruiter_id=$1 AND ap.discoverable AND u.email_verified_at IS NOT NULL AND u.deleted_at IS NULL AND u.suspended_at IS NULL
+        AND (ap.birth_date<=CURRENT_DATE-INTERVAL '18 years' OR EXISTS(SELECT 1 FROM guardian_links g WHERE g.athlete_id=u.id)) AND NOT ${BLOCKED_SQL("u.id", "$1::uuid")} ORDER BY b.updated_at DESC`, [s.userId])).rows;
   const snaps = new Map((await snapshots((await subjectsFor(s)).filter((x) => board.some((b) => b.athlete_id === x.id)), todayStr())).map((x) => [x.id, x]));
   return (
     <Grid>

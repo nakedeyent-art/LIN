@@ -1,13 +1,10 @@
+import { B, LOG, browserOptions, sql, dbErr, mk, submitAndWait } from "./runtime.mjs";
 import { chromium } from "playwright";
-import { execSync, spawnSync } from "node:child_process";
 import { code, nowStep, totpAt } from "./mfa-helper.mjs";
 import { readFileSync } from "node:fs";
-const B = "http://localhost:3113";
-const br = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium" });
+const br = await chromium.launch(browserOptions);
 let fails = 0, total = 0;
 const rec = (ok, k, extra = "") => { total++; if (!ok) fails++; console.log((ok ? "PASS " : "FAIL ") + k.padEnd(76) + (ok ? "" : String(extra).slice(0, 300))); };
-const sql = (q) => execSync(`su postgres -c "psql lin -At -q"`, { input: q }).toString().trim();
-const dbErr = (q) => { const r = spawnSync("su", ["postgres", "-c", "psql lin -At -q -v ON_ERROR_STOP=1"], { input: q }); return (r.stderr?.toString() ?? "") + (r.status ? " [exit " + r.status + "]" : ""); };
 const settle = async (p) => { await p.waitForLoadState("networkidle"); await p.waitForTimeout(1200); await p.waitForLoadState("networkidle"); };
 const text = async (p) => (await p.locator("main, .center").first().innerText({ timeout: 2500 }).catch(() => "")).replace(/\s+/g, " ");
 async function see(p, re, k) { re = new RegExp(re.source, "i"); let t = ""; for (let i = 0; i < 12; i++) { t = await text(p); if (re.test(t)) return rec(true, k); await p.waitForTimeout(500); } rec(false, k, `got=${t}`); }
@@ -16,14 +13,13 @@ async function made(f) {
   const ctx = await br.newContext(); const p = await ctx.newPage(); await p.goto(B + "/signup"); await p.waitForSelector("[name=name]");
   await p.fill("[name=name]", f.name); await p.fill("[name=email]", f.email); await p.fill("[name=password]", OLD); await p.check(`[name=role][value=${f.role}]`);
   for (const k of ["sport", "birth_date", "guardian_email"]) if (f[k]) await p.fill(`[name=${k}]`, f[k]);
-  await p.click("button[type=submit]"); await settle(p); sql(`update users set email_verified_at=now() where email='${f.email}'`); await p.goto(B + "/dashboard"); await settle(p); return p;
+  await submitAndWait(p, "button[type=submit]"); await settle(p); sql(`update users set email_verified_at=now() where email='${f.email}'`); await p.goto(B + "/dashboard"); await settle(p); return p;
 }
-const LOG = "/tmp/claude-0/mail.log";
 const all = () => readFileSync(LOG, "utf8").split("[mail:dev]").filter((m) => /subject=(New message on a NIL deal|NIL deal update|You have a new NIL offer)/.test(m));
 const base = all().length; const mails = () => all().slice(base);
 
 
-const login = async (p, email, pw = OLD) => { await p.goto(B + "/login"); await p.fill("[name=email]", email); await p.fill("[name=password]", pw); await p.click("button[type=submit]"); await settle(p); };
+const login = async (p, email, pw = OLD) => { await p.goto(B + "/login"); await p.fill("[name=email]", email); await p.fill("[name=password]", pw); await submitAndWait(p, "button[type=submit]"); await settle(p); };
 const bell = async (p) => { await p.goto(B + "/dashboard"); await settle(p); return (await p.locator(".side nav a:has-text('Notifications')").innerText()).replace(/\s+/g, " "); };
 const logStart = readFileSync(LOG, "utf8").length;
 const mailsTo = (to, subj) => readFileSync(LOG, "utf8").slice(logStart).split("[mail:dev]").filter((m) => m.includes(`to=${to} subject=${subj}`));
@@ -38,14 +34,13 @@ const sam = await made({ name: "Sam Sponsor", email: "sam@x.com", role: "sponsor
 const ada = await made({ name: "Ada Adult", email: "ada@x.com", role: "athlete", sport: "Soccer", birth_date: "2000-01-01" });
 const maria = await made({ name: "Maria Reyes", email: "maria@x.com", role: "parent" });
 const root = await made({ name: "Root Admin", email: "root@x.com", role: "parent" });
-const mk = (args) => spawnSync("node", ["scripts/" + args[0], ...args.slice(1)], { cwd: "/home/user/LIN", env: { ...process.env, DATABASE_URL: "postgres://lin:lin@localhost:5432/lin" } });
 const path = (p) => new URL(p.url()).pathname;
 const goto = async (p, u) => { await p.goto(B + u); await settle(p); };
-const newSession = async (email, next) => { const p = await br.newContext().then((c) => c.newPage()); await p.goto(B + "/login" + (next ? `?next=${encodeURIComponent(next)}` : "")); await p.fill("[name=email]", email); await p.fill("[name=password]", OLD); await p.click("button[type=submit]"); await settle(p); return p; };
-const verifyWith = async (p, v) => { await p.fill("input[name=code]", v); await p.click("button:text-is('Verify')"); await settle(p); };
+const newSession = async (email, next) => { const p = await br.newContext().then((c) => c.newPage()); await p.goto(B + "/login" + (next ? `?next=${encodeURIComponent(next)}` : "")); await p.fill("[name=email]", email); await p.fill("[name=password]", OLD); await submitAndWait(p, "button[type=submit]"); await settle(p); return p; };
+const verifyWith = async (p, v) => { await p.fill("input[name=code]", v); await submitAndWait(p, "button:text-is('Verify')"); await settle(p); };
 const resetStep = () => sql("update user_mfa set last_used_step = null");
 const settings = async (p) => { await goto(p, "/dashboard/settings"); return p.locator("main .card", { has: p.locator("h3:text-is('Two-factor authentication')") }); };
-const enroll = async (p, secret, pw = OLD, c = null) => { await p.fill("input[name=code]", c ?? code(secret)); await p.fill("input[name=password]", pw); await p.click("button:text-is('Turn on two-factor')"); await settle(p); };
+const enroll = async (p, secret, pw = OLD, c = null) => { await p.fill("input[name=code]", c ?? code(secret)); await p.fill("input[name=password]", pw); await submitAndWait(p, "button:text-is('Turn on two-factor')"); await settle(p); };
 const logMails = (to, subj) => readFileSync(LOG, "utf8").slice(logStart).split("[mail:dev]").filter((m) => m.includes(`to=${to} subject=${subj}`)).length;
 
 // ===== opt-in, with a nudge for roles that handle money =====
@@ -59,7 +54,7 @@ rec((await ada.goto(B + "/dashboard")).status() === 200, "without it, nothing ch
 // ===== enrolling from Settings =====
 const adaOther = await newSession("ada@x.com");                  // a second device signed in before she enrols
 await goto(ada, "/dashboard/settings");
-await ada.locator("a:text-is('Turn on two-factor')").click(); await settle(ada);
+await ada.locator("a:text-is('Turn on two-factor')").click(); await ada.waitForURL("**/mfa/setup"); await settle(ada);
 rec(path(ada) === "/mfa/setup", "the setup page is open to ordinary accounts", path(ada));
 rec(/A second step protects your account/.test(await text(ada)) && (await ada.locator("img[alt*='QR']").count()) === 1, "friendly wording and a QR code");
 const secret = (await ada.locator("[data-testid=mfa-secret]").innerText()).replace(/\s/g, "");
@@ -147,6 +142,8 @@ await off(codes2[0]);
 await see(ada, /Two-factor authentication is off/, "a recovery code is enough to turn it off");
 rec(sql("select count(*) from user_mfa") === "0" && sql("select count(*) from user_recovery_codes") === "0", "all enrolment data is deleted");
 rec(logMails("ada@x.com", "Two-factor authentication was turned off on your LIN account") === 1, "an email says so");
+await goto(p5, "/dashboard"); rec(path(p5) === "/login", "turning MFA off revokes password-only pending sessions");
+await goto(p4, "/dashboard"); rec(path(p4) === "/login", "turning MFA off also revokes other verified sessions");
 card = await settings(ada); rec(/Two-factor turned off/.test(await card.innerText()), "and it's in her activity");
 let p6 = await newSession("ada@x.com"); rec(path(p6) === "/dashboard", "signing in is back to password-only", path(p6));
 
@@ -158,23 +155,45 @@ await see(ada, /password is incorrect/, "enrolling without the password is refus
 
 // ===== support reset =====
 await mk(["make-admin.mjs", "root@x.com"]);
-const { mfaEnroll } = await import("./mfa-helper.mjs"); await mfaEnroll(root, B);
+const { mfaEnroll } = await import("./mfa-helper.mjs"); const rootSecret = await mfaEnroll(root, B);
 await goto(sam, "/mfa/setup"); const secretS = (await sam.locator("[data-testid=mfa-secret]").innerText()).replace(/\s/g, ""); await enroll(sam, secretS);
 await sam.locator("input[type=checkbox]").check(); await sam.locator("a:text-is('Continue')").click(); await settle(sam);
 const SID = id("sam@x.com");
+
+// A financial action pauses for a recent code and is never executed by the verification redirect.
+const secureDeal = sql(`INSERT INTO deals(athlete_id,counterparty_id,title,amount_cents,deliverables,status) VALUES('${id("ada@x.com")}','${SID}','Security check deal',10000,'Appear at a supervised community event','active') RETURNING id`);
+sql(`UPDATE sessions SET mfa_verified_at=NOW()-INTERVAL '11 minutes' WHERE user_id='${SID}'`);
+await goto(sam, `/dashboard/deals/${secureDeal}`);
+await submitAndWait(sam, "button:text-is('Mark completed & release payment')"); await settle(sam);
+rec(path(sam) === "/mfa/verify" && new URL(sam.url()).searchParams.get("sensitive") === "1", "financial actions require a recent second factor");
+rec(sql(`SELECT status FROM deals WHERE id='${secureDeal}'`) === "active", "the action has not run while verification is pending");
+resetStep(); await verifyWith(sam, code(secretS));
+rec(path(sam) === `/dashboard/deals/${secureDeal}`, "verification returns to the original deal");
+rec(sql(`SELECT status FROM deals WHERE id='${secureDeal}'`) === "active", "returning to the deal does not automatically execute the action");
+await submitAndWait(sam, "button:text-is('Mark completed & release payment')"); await settle(sam);
+rec(sql(`SELECT status FROM deals WHERE id='${secureDeal}'`) === "completed", "the reviewed action succeeds after recent MFA");
+
 await goto(root, `/admin/users/${SID}`);
 await see(root, /Two-factor\s*on/i, "an admin sees whether someone has two-factor on");
-const adminForm = async (p, title, vals, button) => { const c = p.locator("main .card", { has: p.locator(`h3:text-is("${title}")`) }); for (const [k, v] of Object.entries(vals)) await c.locator(`[name="${k}"]`).fill(v); await c.locator(`button:has-text("${button}")`).click(); await settle(p); };
+const adminForm = async (p, title, vals, button) => { const c = p.locator("main .card", { has: p.locator(`h3:text-is("${title}")`) }); for (const [k, v] of Object.entries(vals)) await c.locator(`[name="${k}"]`).fill(v); await submitAndWait(p, c.locator(`button:has-text("${button}")`)); await settle(p); };
 await root.locator("main input[name=reason]").first().evaluate((i) => i.removeAttribute("minlength"));
 await adminForm(root, "Remove two-factor", { reason: "short", password: OLD }, "Remove two-factor"); await see(root, /Give a reason/, "support needs a written reason");
 await adminForm(root, "Remove two-factor", { reason: "Lost phone and recovery codes; verified by video call", password: "wrong-password-x" }, "Remove two-factor"); await see(root, /password is incorrect/, "and the admin's password");
 rec(sql(`select count(*) from user_mfa where user_id='${SID}'`) === "1", "nothing changed by the failed attempts");
+
+sql(`UPDATE sessions SET mfa_verified_at=NOW()-INTERVAL '11 minutes' WHERE user_id='${id("root@x.com")}'`);
+await adminForm(root, "Remove two-factor", { reason: "Lost device; independently verified identity", password: OLD }, "Remove two-factor");
+rec(path(root) === "/mfa/verify", "support resets require the admin's recent second factor");
+rec(sql(`SELECT count(*) FROM user_mfa WHERE user_id='${SID}'`) === "1", "a stale admin session cannot remove another person's MFA");
+resetStep(); await verifyWith(root, code(rootSecret));
+
 await adminForm(root, "Remove two-factor", { reason: "Lost phone and recovery codes; verified by video call", password: OLD }, "Remove two-factor");
 await see(root, /Two-factor removed/, "support can remove it");
 rec(sql(`select count(*) from user_mfa where user_id='${SID}'`) === "0" && sql(`select count(*) from sessions where user_id='${SID}'`) === "0", "enrolment gone, person signed out everywhere");
 rec(sql("select count(*) from admin_audit where action='reset_mfa'") === "1" && sql(`select count(*) from security_events where user_id='${SID}' and action='mfa_reset_by_admin'`) === "1", "audited, and in the person's own activity");
 rec(logMails("sam@x.com", "Two-factor authentication was removed from your LIN account") === 1, "and they're emailed");
-let ps = await newSession("sam@x.com"); rec(path(ps) === "/dashboard", "they can sign in with their password and set it up again", path(ps));
+let ps = await newSession("sam@x.com"); rec(path(ps) === "/mfa/setup", "support recovery requires re-enrollment before account access", path(ps));
+rec((await ps.context().request.post(B + "/dashboard/settings/export")).status() === 401, "a recovery-only session cannot export account data");
 await goto(root, `/admin/users/${SID}`); rec((await root.locator("h3:text-is('Remove two-factor')").count()) === 0, "no reset card for someone without it");
 await goto(root, `/admin/users/${id("root@x.com")}`); rec((await root.locator("h3:text-is('Remove two-factor')").count()) === 0, "…or for an admin (theirs is reset from the server)");
 // admins can't turn theirs off

@@ -1,4 +1,5 @@
 "use server";
+import { BLOCKED_SQL } from "@/lib/blocksdb";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
@@ -19,7 +20,7 @@ export async function trackAthlete(formData: FormData) {
   await db().query(
     `INSERT INTO recruiting_board(recruiter_id, athlete_id)
      SELECT $1, u.id FROM athlete_profiles ap JOIN users u ON u.id = ap.user_id
-      WHERE u.id = $2 AND ap.discoverable AND u.email_verified_at IS NOT NULL
+      WHERE u.id = $2 AND ap.discoverable AND u.email_verified_at IS NOT NULL AND u.deleted_at IS NULL AND u.suspended_at IS NULL AND NOT ${BLOCKED_SQL("u.id", "$1::uuid")}
         AND (ap.birth_date <= CURRENT_DATE - INTERVAL '18 years' OR EXISTS (
               SELECT 1 FROM guardian_links r WHERE r.athlete_id = u.id))
      ON CONFLICT (recruiter_id, athlete_id) DO NOTHING`, [s.userId, id]);

@@ -6,6 +6,7 @@ import { capacityOn, dealContext, getDeal } from "@/lib/dealsdb";
 import { canPostMessage, cleanBody, MAX_MESSAGES_PER_MINUTE, type PostState } from "@/lib/messaging";
 import { screenText } from "@/lib/content-filter";
 import { checkUploads } from "@/lib/attachments";
+import { scanUpload } from "@/lib/upload-scan";
 import { paymentsEnabled } from "@/lib/stripe";
 import { insertMessage, notifyNewMessage } from "@/lib/messagesdb";
 import { addBlock, liftBlock, pairBlocked } from "@/lib/blocksdb";
@@ -39,6 +40,7 @@ export async function postMessage(_prev: PostState, formData: FormData): Promise
   const have = (await db().query("SELECT count(*)::int AS n FROM deal_attachments WHERE deal_id=$1", [id])).rows[0].n as number;
   const up = checkUploads(named, have);
   if (!up.ok) return fail(up.error);
+  for (const f of up.files) { const scan = await scanUpload(f.bytes); if (!scan.ok) return fail(scan.message); }
 
   const r = await insertMessage(id, s.userId, body, MAX_MESSAGES_PER_MINUTE, up.files);
   if (!r.ok) return fail("limited" in r ? "You're sending messages too quickly. Wait a moment and try again." : r.error);

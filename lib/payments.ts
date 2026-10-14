@@ -2,7 +2,8 @@
 import type { PoolClient } from "pg";
 import { db } from "./db";
 import { notifyInApp } from "./notificationsdb";
-import { appUrl, sendMail } from "./mailer";
+import { appUrl } from "./mailer";
+import { sendNotice } from "./outbox";
 import { paymentsEnabled, stripe, StripeError } from "./stripe";
 import { fundingBlocker, payeeValid, type PaymentStatus } from "./payment-rules";
 import { platformFee } from "./money";
@@ -38,7 +39,7 @@ export const notifyDealParties = async (dealId: string, subject: string, text: s
     const ids = [...new Set<string>(r.ids)];
     await notifyInApp(ids, { kind: "payment", title: `${subject}: "${r.title}"`, href: `/dashboard/deals/${dealId}` });
     const emails = (await db().query("SELECT email FROM users WHERE id = ANY($1::uuid[]) AND deleted_at IS NULL AND email_deal_updates", [ids])).rows;
-    for (const e of emails) await sendMail(e.email, subject, `${text}\n\n${appUrl()}/dashboard/deals/${dealId}`);
+    for (const e of emails) await sendNotice(e.email, subject, `${text}\n\n${appUrl()}/dashboard/deals/${dealId}`);
   } catch (e) { console.error("payment notice failed", (e as Error).message); }
 };
 
@@ -164,16 +165,22 @@ async function markFunded(c: PoolClient, p: PaymentRow, s: { id: string; payment
 
 /** For a pending payment whose webhook may not have arrived: ask Stripe directly. */
 export async function reconcilePayment(paymentId: string): Promise<void> {
+  // Ask Stripe with no lock held: a network call under a row lock stalls every webhook and release for this payment.
+  const peek = (await db().query("SELECT * FROM deal_payments WHERE id=$1", [paymentId])).rows[0];
+  if (!peek || peek.status !== "pending_checkout" || !peek.stripe_checkout_session_id) return;
+  let s: Awaited<ReturnType<typeof stripe.getCheckoutSession>>;
+  try { s = await stripe.getCheckoutSession(mapPayment(peek).sessionId!); } catch (e) { console.error("reconcile failed:", safeMsg(e)); return; }
+  if (s.status !== "complete" && s.status !== "expired") return;
   const client = await db().connect();
   let funded = false, dealId = "";
   try {
     await client.query("BEGIN");
+    // Re-read under the lock: a webhook may have settled it while we were talking to Stripe.
     const row = (await client.query("SELECT * FROM deal_payments WHERE id=$1 FOR UPDATE", [paymentId])).rows[0];
-    if (!row || row.status !== "pending_checkout" || !row.stripe_checkout_session_id) { await client.query("ROLLBACK"); return; }
+    if (!row || row.status !== "pending_checkout") { await client.query("ROLLBACK"); return; }
     const p = mapPayment(row); dealId = p.dealId;
-    const s = await stripe.getCheckoutSession(p.sessionId!);
     if (s.status === "complete") funded = await markFunded(client, p, s);
-    else if (s.status === "expired") { await client.query("UPDATE deal_payments SET status='expired', updated_at=NOW() WHERE id=$1", [p.id]); await pevent(client, p.id, "expired"); }
+    else { await client.query("UPDATE deal_payments SET status='expired', updated_at=NOW() WHERE id=$1", [p.id]); await pevent(client, p.id, "expired"); }
     await client.query("COMMIT");
   } catch (e) { await client.query("ROLLBACK").catch(() => {}); console.error("reconcile failed:", safeMsg(e)); return; } finally { client.release(); }
   if (funded) await notifyDealParties(dealId, "A NIL deal was funded", "The sponsor's payment is in and is being held until the deal is marked complete.");
@@ -244,6 +251,9 @@ export async function releasePayment(paymentId: string): Promise<{ ok: boolean; 
     p = mapPayment(row);
     if (p.status === "released") { await client.query("COMMIT"); return { ok: true }; }
     if (p.status !== "funded" && p.status !== "releasing") { await client.query("ROLLBACK"); return { ok: false, error: `cannot release a ${p.status} payment` }; }
+    // Money is never released while a cardholder dispute is open: the latest dispute event decides.
+    const dispute = (await client.query("SELECT action FROM payment_events WHERE payment_id=$1 AND action IN ('dispute_opened','dispute_closed') ORDER BY created_at DESC, action DESC LIMIT 1", [paymentId])).rows[0];
+    if (dispute?.action === "dispute_opened") { await client.query("ROLLBACK"); return { ok: false, error: "payment is under dispute" }; }
     const deal = (await client.query("SELECT status FROM deals WHERE id=$1", [p.dealId])).rows[0];
     if (deal?.status !== "completed") { await client.query("ROLLBACK"); return { ok: false, error: "deal is not completed" }; }
     const payee = await payeeInfo(p.dealId, client);

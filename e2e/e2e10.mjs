@@ -1,12 +1,15 @@
+// Ported to the shared runtime: disposable local database (E2E_DATABASE_URL, must end in _e2e), local mail log and base URL come from ./runtime.mjs.
+import * as _rt from "./runtime.mjs";
 // Payments NOT configured: agreements + e-signature still work and the deal never touches money.
 import { chromium } from "playwright";
 import { readFileSync } from "node:fs";
 import { execSync } from "node:child_process";
-const B = "http://localhost:3113", CRON = "test-cron-secret-0123456789abcdef";
-const br = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium" });
+import { mfaEnrollAt } from "./mfa-helper.mjs";
+const B = _rt.B, CRON = "test-cron-secret-0123456789abcdef";
+const br = await chromium.launch(_rt.browserOptions);
 let fails = 0, total = 0;
 const rec = (ok, k, extra = "") => { total++; if (!ok) fails++; console.log((ok ? "PASS " : "FAIL ") + k.padEnd(76) + (ok ? "" : String(extra).slice(0, 200))); };
-const sql = (q) => execSync(`su postgres -c "psql lin -At -q"`, { input: q }).toString().trim();
+const sql = _rt.sql;
 const settle = async (p) => { await p.waitForLoadState("networkidle"); await p.waitForTimeout(1400); await p.waitForLoadState("networkidle"); };
 const text = async (p) => (await p.locator("main, .center").first().innerText({ timeout: 2500 }).catch(() => "")).replace(/\s+/g, " ");
 async function see(p, re, k) { re = new RegExp(re.source, "i"); let t = ""; for (let i = 0; i < 20; i++) { t = await text(p); if (re.test(t)) return rec(true, k); await p.waitForTimeout(500); } rec(false, k, `got=${t}`); }
@@ -23,7 +26,7 @@ async function made(f) {
 }
 const open = async (p, path) => { await p.goto(B + path); await settle(p); };
 const click = async (p, label) => { await p.locator(`main button:has-text("${label}")`).first().click(); await settle(p); };
-async function signAs(p, d, name) { await open(p, `/dashboard/deals/${d}/contract`); await p.fill("[name=typed_name]", name); await p.check("[name=consent]"); await p.locator("main button:has-text('Sign agreement')").click(); await settle(p); }
+const signAs = (p, d, name) => _rt.signDealViaForg3(p, `${B}/dashboard/deals/${d}`, name);   // Forg3 replaces the typed-name legacy signing
 
 sql("truncate users cascade; truncate job_runs; truncate stripe_events");
 const sam = await made({ name: "Sam Sponsor", email: "sam@x.com", role: "sponsor" });
@@ -33,7 +36,8 @@ await open(ada, `/dashboard/deals/${D}`); await click(ada, "Accept");
 rec(sql(`select status from deals where id='${D}'`) === "awaiting_signature", "accept still goes to signing");
 const body = sql(`select body from contracts where deal_id='${D}'`);
 rec(/does not itself move money/.test(body) && !/platform fee/i.test(body) && sql(`select platform_fee_bps from contracts where deal_id='${D}'`) === "0", "contract says it doesn't move money; no fee");
-await signAs(ada, D, "Ada Adult"); await signAs(sam, D, "Sam Sponsor");
+await mfaEnrollAt(sam, B, OLD); await mfaEnrollAt(ada, B, OLD);
+await signAs(sam, D, "Sam Sponsor"); await signAs(ada, D, "Ada Adult");   // Forg3 order: sponsor, then athlete
 rec(sql(`select status from deals where id='${D}'`) === "active", "two signatures → active");
 await open(sam, `/dashboard/deals/${D}`);
 rec((await sam.locator("main h3:text-is('Payment')").count()) === 0 && (await sam.locator("main button:has-text('Fund')").count()) === 0, "no Payment card and no Fund button when payments are off");

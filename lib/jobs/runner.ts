@@ -1,9 +1,14 @@
+import { runScoutingWatch } from "./scouting-watch";
+import { runOperationsReminders } from "./operations";
+import { runUploadScan } from "./upload-scan";
 import { db } from "../db";
 import { runAdultTransition, type JobResult } from "./adult-transition";
 import { retryStuckPayments } from "../payments";
 import { paymentsEnabled } from "../stripe";
 import { purgeOldNotifications } from "../notificationsdb";
 import { ingestAll } from "../newsdb";
+import { drainOutbox, purgeOutbox } from "../outbox";
+import { purgeRateLimits } from "../ratelimit";
 
 const LOCK_KEY = 7_345_001;   // arbitrary app-wide advisory-lock id: only one run of the daily jobs at a time
 
@@ -13,7 +18,17 @@ export type RunSummary =
 
 /** Add new scheduled jobs here; each must be idempotent and safe to retry. */
 const JOBS: { name: string; run: (o: { dry: boolean }) => Promise<JobResult> }[] = [
+  // Retries queued notices with backoff (see lib/outbox.ts). Runs first so a provider outage clears as soon as the scheduler fires.
+  { name: "email-outbox", run: async ({ dry }) => {
+      if (dry) return { processed: 0, skipped: 0, failed: 0 };
+      const r = await drainOutbox(500);
+      return { processed: r.sent, skipped: r.retrying, failed: r.dead };   // a message that exhausted its retries is a real failure
+    } },
+  // Releases (or quarantines) uploads accepted in async scan mode. Early, so files become usable as soon as possible.
+  { name: "upload-scan", run: runUploadScan },
   { name: "adult-transition", run: runAdultTransition },
+  { name: "operations-reminders", run: runOperationsReminders },
+  { name: "scouting-watch", run: runScoutingWatch },
   // Finishes payouts/refunds that failed mid-way and reconciles checkouts whose webhook never arrived. Safe to retry: Stripe calls are idempotent.
   { name: "payments-retry", run: async ({ dry }) => {
       if (dry || !paymentsEnabled()) return { processed: 0, skipped: 0, failed: 0 };
@@ -32,7 +47,9 @@ const JOBS: { name: string; run: (o: { dry: boolean }) => Promise<JobResult> }[]
       const notes = await purgeOldNotifications();
       const sessions = (await db().query("DELETE FROM sessions WHERE expires_at < NOW() - INTERVAL '1 day'")).rowCount ?? 0;
       const logs = (await db().query("DELETE FROM job_runs WHERE started_at < NOW() - INTERVAL '180 days'")).rowCount ?? 0;
-      return { processed: notes + sessions + logs, skipped: 0, failed: 0 };
+      const outbox = await purgeOutbox();
+      const limits = await purgeRateLimits();
+      return { processed: notes + sessions + logs + outbox + limits, skipped: 0, failed: 0 };
     } },
 ];
 

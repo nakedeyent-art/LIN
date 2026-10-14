@@ -1,11 +1,13 @@
+// Ported to the shared runtime: disposable local database (E2E_DATABASE_URL, must end in _e2e), local mail log and base URL come from ./runtime.mjs.
+import * as _rt from "./runtime.mjs";
 import { chromium } from "playwright";
 import { readFileSync } from "node:fs";
 import { execSync } from "node:child_process";
-const B = "http://localhost:3113";
-const br = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium" });
+const B = _rt.B;
+const br = await chromium.launch(_rt.browserOptions);
 let fails = 0, total = 0;
 const rec = (ok, k, extra = "") => { total++; if (!ok) fails++; console.log((ok ? "PASS " : "FAIL ") + k.padEnd(60) + (ok ? "" : extra)); };
-const sql = (q) => execSync(`su postgres -c "psql lin -At -q"`, { input: q }).toString().trim();
+const sql = _rt.sql;
 const settle = async (p) => { await p.waitForLoadState("networkidle"); await p.waitForTimeout(1500); await p.waitForLoadState("networkidle"); };
 const mainText = async (p) => (await p.locator("main, .center").first().innerText().catch(() => "")).replace(/\s+/g, " ");
 // poll until the page text matches (dev-mode compiles make fixed sleeps flaky)
@@ -13,7 +15,7 @@ const ci = (re) => new RegExp(re.source, re.flags.includes("i") ? re.flags : re.
 async function see(p, re0, k) { const re = ci(re0); let t = ""; for (let i = 0; i < 40; i++) { t = await mainText(p); if (re.test(t)) return rec(true, k); await p.waitForTimeout(500); } rec(false, k, `got=${t.slice(0, 160)}`); }
 async function notSee(p, re0, k) { const re = ci(re0); await settle(p); const t = await mainText(p); rec(!re.test(t), k, `unexpected match in: ${t.slice(0, 160)}`); }
 const status = async (p, path) => { const r = await p.goto(B + path); await settle(p); return r.status(); };
-const mails = () => readFileSync("/tmp/claude-0/mail.log", "utf8");
+const mails = () => readFileSync(_rt.LOG, "utf8");
 const link = (to, re) => { const m = mails().split("[mail:dev]").filter((x) => x.includes(`to=${to} `)).map((x) => x.match(re)?.[0]).filter(Boolean); return m.at(-1); };
 const newPage = async () => (await br.newContext()).newPage();
 const today = new Date().toISOString().slice(0, 10);
@@ -43,7 +45,7 @@ async function submit(p, vals, button) {
 }
 const id = (email) => sql(`select id from users where email='${email}'`);
 
-sql("truncate users cascade");
+sql("delete from rate_limits; truncate users cascade");
 // ---------- signup rules ----------
 { const p = await signup({ name: "No Cred", email: "nc@x.com", role: "trainer" }); await see(p, /certification/i, "trainer signup requires a certification");
   const q = await signup({ name: "No Cred", email: "nc2@x.com", role: "manager", declared: "certified_strength_coach" }); await see(q, /certification/i, "certified-coach manager requires a certification"); }
@@ -211,8 +213,8 @@ rec((await status(cody, "/dashboard/nutrition")) === 404, "coach has no nutritio
 // ---------- 6. dashboards on real data ----------
 await jordan.goto(B + "/dashboard"); await settle(jordan);
 await see(jordan, /Tomorrow session/, "athlete home: next workout is real");
-await see(jordan, /Verified study minutes \(7d\) 105/, "athlete home: verified minutes");
-await see(jordan, /Nutrition on target \(14d\) 60%/, "athlete home: nutrition compliance");
+await see(jordan, /105 Verified study minutes \(7d\)/, "athlete home: verified minutes");
+await see(jordan, /60% Nutrition on target \(14d\)/, "athlete home: nutrition compliance");
 await see(jordan, /✅ Add body details/, "athlete checklist reflects real progress");
 await maria.goto(B + "/dashboard"); await settle(maria); await see(maria, /Jordan Reyes.*Cleared/, "parent home: athlete row with gate");
 await see(maria, /2\+ missed/, "parent home flags missed sessions");
@@ -248,7 +250,7 @@ await submit(tm, { name: "Fall Hoops Classic", sport: "Basketball", location: "D
 await tm.goto(B + "/dashboard/events"); await settle(tm);
 await tm.locator("main select[name=status]").selectOption("published"); await tm.locator("main button:has-text('Update')").click(); await settle(tm);
 await tm.goto(B + "/dashboard"); await see(tm, /Fall Hoops Classic.*published/, "tournament home lists the published event");
-await sam.goto(B + "/dashboard"); await see(sam, /Open offers 0/, "sponsor pipeline computed from real deals");
+await sam.goto(B + "/dashboard"); await see(sam, /0 Open offers/, "sponsor pipeline computed from real deals");
 await gia.goto(B + "/dashboard"); await see(gia, /Your offers/, "gym owner dashboard is the real pipeline");
 rec((await status(ada, "/dashboard/team")) === 200, "adult athlete can open Team");
 await ada.goto(B + "/dashboard/team"); await see(ada, /Send invite/, "adult athlete manages their own team");

@@ -7,7 +7,7 @@ import { canActOnUser, validateReason } from "@/lib/admin";
 import { audit, targetOf, userForAdmin } from "@/lib/admindb";
 import { isOutcome } from "@/lib/reports";
 import { notifyInApp } from "@/lib/notificationsdb";
-import { sendMail } from "@/lib/mailer";
+import { sendNotice } from "@/lib/outbox";
 
 const str = (f: FormData, k: string) => String(f.get(k) ?? "").trim();
 
@@ -63,7 +63,7 @@ export async function resolveReport(formData: FormData) {
   await notifyInApp(reporters, { kind: "account", title: outcome === "dismiss" ? "A moderator reviewed your report and found no violation" : "A moderator reviewed your report and took action", href: `/dashboard/deals/${dealId}/messages` });
   if (outcome === "warn" || outcome === "suspend") {
     await notifyInApp([senderId], { kind: "account", title: "A message you sent was removed for breaking the community rules", href: `/dashboard/deals/${dealId}/messages` });
-    if (senderEmail) await sendMail(senderEmail, "A message you sent on LIN was removed",
+    if (senderEmail) await sendNotice(senderEmail, "A message you sent on LIN was removed",
       `A moderator removed a message you sent on a NIL deal because it broke our community rules (be respectful, no harassment or inappropriate content, no contact or payment outside LIN where it isn't allowed).${outcome === "suspend" ? "\n\nYour account has been suspended. Contact support if you think this is a mistake." : "\n\nPlease keep conversations respectful; repeated violations can lead to suspension."}`).catch(() => {});
   }
   back("msg", outcome === "dismiss" ? "Report dismissed." : outcome === "hide" ? "Message hidden." : outcome === "warn" ? "Message hidden and the sender warned." : "Message hidden and the sender suspended.");

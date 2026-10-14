@@ -1,11 +1,13 @@
+// Ported to the shared runtime: disposable local database (E2E_DATABASE_URL, must end in _e2e), local mail log and base URL come from ./runtime.mjs.
+import * as _rt from "./runtime.mjs";
 import { chromium } from "playwright";
 import { execSync } from "node:child_process";
 import { createHmac } from "node:crypto";
-const B = "http://localhost:3113", WH = "whsec_test_mock_secret_0123456789";
-const br = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium" });
+const B = _rt.B, WH = "whsec_test_mock_secret_0123456789";
+const br = await chromium.launch(_rt.browserOptions);
 let fails = 0, total = 0;
 const rec = (ok, k, extra = "") => { total++; if (!ok) fails++; console.log((ok ? "PASS " : "FAIL ") + k.padEnd(76) + (ok ? "" : String(extra).slice(0, 200))); };
-const sql = (q) => execSync(`su postgres -c "psql lin -At -q"`, { input: q }).toString().trim();
+const sql = _rt.sql;
 const settle = async (p) => { await p.waitForLoadState("networkidle"); await p.waitForTimeout(1400); await p.waitForLoadState("networkidle"); };
 const text = async (p) => (await p.locator("main, .center").first().innerText({ timeout: 2500 }).catch(() => "")).replace(/\s+/g, " ");
 async function see(p, re, k) { re = new RegExp(re.source, "i"); let t = ""; for (let i = 0; i < 20; i++) { t = await text(p); if (re.test(t)) return rec(true, k); await p.waitForTimeout(500); } rec(false, k, `got=${t}`); }

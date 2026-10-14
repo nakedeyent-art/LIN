@@ -1,14 +1,12 @@
-import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/session";
-import { paymentsEnabled } from "@/lib/stripe";
-import { startPayoutOnboarding } from "@/lib/payments";
+import { startPayouts } from "../../deals/payment-actions";
 
-/** The onboarding link expired or was reopened: issue a fresh one. */
+/** Expired Stripe links return here. Reuse the POST action's eligibility and MFA checks. */
 export default async function PayoutRefresh() {
-  const s = await requireUser();
-  if (!paymentsEnabled()) redirect("/dashboard/deals");
-  let url: string;
-  try { url = await startPayoutOnboarding(s.userId, s.email); }
-  catch { redirect(`/dashboard/deals?error=${encodeURIComponent("We couldn't reopen payout setup. Please try again.")}`); }
-  redirect(url);
+  await requireUser();
+  return <>
+    <h1>Continue payout setup</h1>
+    <p>Your payout setup link expired. Continue to open a new secure link.</p>
+    <form action={startPayouts}><button className="btn" type="submit">Continue payout setup</button></form>
+  </>;
 }

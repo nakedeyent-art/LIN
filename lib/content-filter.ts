@@ -20,12 +20,13 @@ const URL = /(https?:\/\/|www\.)\S+|\b[a-z0-9-]+\.(com|net|org|io|me|co|gg|ly|ap
 const HANDLE = /(^|\s)@[a-z0-9_.]{3,}/i;
 const SOCIAL = /\b(insta(gram)?|ig|snap(chat)?|whats\s?app|telegram|discord|tiktok|kik|signal|facetime|text\s+me|call\s+me|dm\s+me|my\s+(number|cell|phone|email|handle)|add\s+me)\b/i;
 
-export function screenText(text: string, o: { minorThread: boolean; paymentsOn: boolean }): FilterResult {
+/** `platformsOk`: deal terms legitimately name platforms ("two Instagram posts"); contact details, links and handles stay blocked for minors. */
+export function screenText(text: string, o: { minorThread: boolean; paymentsOn: boolean; platformsOk?: boolean }): FilterResult {
   const q = squash(text);
   if (ABUSE.test(q) || ABUSE.test(joinSpaced(q))) return { ok: false, kind: "abuse", error: "That message looks abusive or inappropriate, so it wasn't sent. Please reword it." };
   if (o.paymentsOn && PAYMENT.test(text))
     return { ok: false, kind: "payment", error: "Payments for deals go through LIN so both sides are protected. Please don't arrange payment outside the platform." };
-  if (o.minorThread && (EMAIL.test(text) || PHONE.test(text) || URL.test(text) || HANDLE.test(text) || SOCIAL.test(text)))
+  if (o.minorThread && (EMAIL.test(text) || PHONE.test(text) || URL.test(text) || HANDLE.test(text) || (!o.platformsOk && SOCIAL.test(text))))
     return { ok: false, kind: "contact", error: "To keep young athletes safe, contact details, links and social handles can't be shared in this conversation. Their parent/guardian can arrange anything further." };
   return { ok: true };
 }

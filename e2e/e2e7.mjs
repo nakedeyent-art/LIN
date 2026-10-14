@@ -1,18 +1,21 @@
+// Ported to the shared runtime: disposable local database (E2E_DATABASE_URL, must end in _e2e), local mail log and base URL come from ./runtime.mjs.
+import * as _rt from "./runtime.mjs";
 import { chromium } from "playwright";
 import { readFileSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { createHash } from "node:crypto";
-const B = "http://localhost:3113";
-const br = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium" });
+import { mfaEnrollAt } from "./mfa-helper.mjs";
+const B = _rt.B;
+const br = await chromium.launch(_rt.browserOptions);
 let fails = 0, total = 0;
 const rec = (ok, k, extra = "") => { total++; if (!ok) fails++; console.log((ok ? "PASS " : "FAIL ") + k.padEnd(70) + (ok ? "" : String(extra).slice(0, 170))); };
-const sql = (q) => execSync(`su postgres -c "psql lin -At -q"`, { input: q }).toString().trim();
+const sql = _rt.sql;
 const settle = async (p) => { await p.waitForLoadState("networkidle"); await p.waitForTimeout(1500); await p.waitForLoadState("networkidle"); };
 const text = async (p) => (await p.locator("main, .center").first().innerText().catch(() => "")).replace(/\s+/g, " ");
 async function see(p, re, k) { re = new RegExp(re.source, "i"); let t = ""; for (let i = 0; i < 40; i++) { t = await text(p); if (re.test(t)) return rec(true, k); await p.waitForTimeout(500); } rec(false, k, `got=${t}`); }
 async function notSee(p, re, k) { await settle(p); const t = await text(p); rec(!new RegExp(re.source, "i").test(t), k, `unexpected: ${t}`); }
-const START = readFileSync("/tmp/claude-0/mail.log", "utf8").length;
-const mails = () => readFileSync("/tmp/claude-0/mail.log", "utf8").slice(START).split("[mail:dev]").filter((m) => m.includes(" to="));
+const START = readFileSync(_rt.LOG, "utf8").length;
+const mails = () => readFileSync(_rt.LOG, "utf8").slice(START).split("[mail:dev]").filter((m) => m.includes(" to="));
 const mailsTo = (to, subj) => mails().filter((m) => m.includes(`to=${to} subject=${subj}`));
 const inviteLinks = (to) => mails().filter((m) => m.includes(`to=${to} `) && /guardian\/accept/.test(m)).map((m) => m.match(/http:\/\/localhost:3113\/guardian\/accept\?token=[\w-]+/)?.[0]).filter(Boolean);
 const OLD = "longenoughpw1";
@@ -33,7 +36,7 @@ const guardians = (athlete) => sql(`select coalesce(string_agg(u.email, ',' orde
 async function invite(p, panelTitle, email) { const c = card(p, panelTitle); await c.locator("[name=email]").fill(email); await c.locator("button:has-text('Invite guardian')").click(); await settle(p); }
 async function accept(p, url) { await p.goto(url); await settle(p); await p.locator("button:has-text('Accept')").click(); await settle(p); }
 
-sql("truncate users cascade");
+sql("delete from rate_limits; truncate users cascade");
 const jordan = await made({ name: "Jordan Reyes", email: "jordan@x.com", role: "athlete", sport: "Basketball", position: "PG", birth_date: "2010-03-04", guardian_email: "maria@x.com" });
 const maria = await made({ name: "Maria Reyes", email: "maria@x.com", role: "parent" });
 const dan = await made({ name: "Dan Reyes", email: "dan@x.com", role: "parent" });
@@ -217,7 +220,8 @@ await open(maria, `/dashboard/nutrition?athlete=${jid}`); await see(maria, /View
 rec((await maria.locator("main button:has-text('Save details')").count()) === 0 && (await maria.locator("main button:has-text('Create targets')").count()) === 0, "parent of an adult can't edit nutrition");
 await open(maria, `/dashboard/training?athlete=${jid}`); rec((await maria.locator("main button:has-text('Switch to')").count()) === 0, "parent of an adult can't change season mode");
 await open(maria, `/dashboard/deals`); await notSee(maria, /Pending at 18/, "sharing academics/health never exposes deals");
-// athlete confirms the deal; former guardian can't
+// athlete confirms the deal; former guardian can't. Approving a deal is a money decision: it needs two-factor with a recent code.
+await mfaEnrollAt(jordan, B, OLD);
 await open(jordan, `/dashboard/deals/${dealId}`); await jordan.locator("main button:has-text('Confirm deal')").click(); await settle(jordan);
 rec(sql("select status from deals where title='Pending at 18'") === "awaiting_signature", "adult athlete confirmed the deal that was awaiting a guardian (it now goes to signing)");
 // stop sharing, then remove

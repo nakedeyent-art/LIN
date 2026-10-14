@@ -3,7 +3,8 @@ import { notFound, redirect } from "next/navigation";
 import { db } from "./db";
 import { hashToken, newSessionToken } from "./crypto";
 import { ROLES, type Role } from "./roles";
-import { mfaStatus } from "./mfa";
+import { MFA_SENSITIVE_MINUTES, mfaStatus } from "./mfa";
+import { safeNext } from "./redirect";
 
 export const COOKIE = "lin_session";
 const SESSION_DAYS = 7;
@@ -41,20 +42,20 @@ export async function endOtherSessions(userId: string): Promise<void> {
   await db().query("DELETE FROM sessions WHERE user_id=$1 AND token_hash <> COALESCE($2, '')", [userId, await currentTokenHash()]);
 }
 
-type Loaded = Session & { mfaEnrolled: boolean; mfaPending: boolean };
+type Loaded = Session & { mfaEnrolled: boolean; mfaPending: boolean; mfaReenrollmentRequired: boolean };
 
 async function load(): Promise<Loaded | null> {
   const token = (await cookies()).get(COOKIE)?.value;
   if (!token) return null;
   const { rows } = await db().query(
-    `SELECT u.id, u.full_name, u.email, u.role, u.email_verified_at IS NOT NULL AS verified, u.is_admin,
+    `SELECT u.id, u.full_name, u.email, u.role, u.email_verified_at IS NOT NULL AS verified, u.is_admin, u.mfa_reenrollment_required,
             (m.enabled_at IS NOT NULL) AS enrolled, (m.enabled_at IS NOT NULL AND s.mfa_verified_at IS NULL) AS pending
        FROM sessions s JOIN users u ON u.id = s.user_id LEFT JOIN user_mfa m ON m.user_id = u.id
       WHERE s.token_hash = $1 AND s.expires_at > NOW() AND u.deleted_at IS NULL AND u.suspended_at IS NULL`,
     [hashToken(token)],
   );
   const r = rows[0];
-  return r ? { userId: r.id, name: r.full_name, email: r.email, role: r.role as Role, emailVerified: r.verified, isAdmin: r.is_admin, mfaEnrolled: !!r.enrolled, mfaPending: !!r.pending } : null;
+  return r ? { userId: r.id, name: r.full_name, email: r.email, role: r.role as Role, emailVerified: r.verified, isAdmin: r.is_admin, mfaEnrolled: !!r.enrolled, mfaPending: !!r.pending || r.mfa_reenrollment_required, mfaReenrollmentRequired: r.mfa_reenrollment_required } : null;
 }
 
 /**
@@ -75,6 +76,7 @@ export async function getPendingSession(): Promise<Session | null> {
 export async function requireUser(): Promise<Session> {
   const s = await load();
   if (!s) redirect("/login");
+  if (s.mfaReenrollmentRequired) redirect("/mfa/setup");
   if (s.mfaPending) redirect("/mfa/verify");
   if (!s.emailVerified) redirect("/verify-email");
   return s;
@@ -85,6 +87,14 @@ export async function requireAccess(href: string): Promise<Session> {
   const s = await requireUser();
   if (!ROLES[s.role].nav.some((n) => n.href === href)) notFound();
   return s;
+}
+
+/** Enrollment and a recent second factor are required at the point of a financial decision. */
+export async function requireRecentMfa(s: Session, returnTo: string): Promise<void> {
+  const next = encodeURIComponent(safeNext(returnTo));
+  const m = await mfaStatus(s.userId, await currentTokenHash(), MFA_SENSITIVE_MINUTES);
+  if (!m.enrolled) redirect(`/mfa/setup?next=${next}&sensitive=1`);
+  if (!m.verifiedFresh) redirect(`/mfa/verify?next=${next}&sensitive=1`);
 }
 
 /**
@@ -109,7 +119,7 @@ export async function getAdminSession(): Promise<Session | null> {
 }
 
 /** Anyone with a verified email who may be mid-way through the second step (used only by the /mfa pages). */
-export async function requireMfaPage(): Promise<Session & { mfaPending: boolean }> {
+export async function requireMfaPage(): Promise<Session & { mfaPending: boolean; mfaReenrollmentRequired: boolean }> {
   const s = await load();
   if (!s) redirect("/login");
   if (!s.emailVerified) redirect("/verify-email");

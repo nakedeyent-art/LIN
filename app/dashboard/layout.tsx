@@ -17,10 +17,11 @@ export default async function DashboardLayout({ children }: { children: React.Re
       <aside className="side">
         <div className="brand">LIN</div>
         <span className="role-chip">{cfg.label}</span>
-        <nav>{cfg.nav.map((n) => <Link key={n.href} href={n.href}>{n.label}</Link>)}<Link href="/dashboard/notifications">Notifications{unread > 0 ? ` (${countLabel(unread)})` : ""}</Link><Link href="/dashboard/settings">Settings</Link>{s.isAdmin && <Link href="/admin">Admin</Link>}</nav>
+        <nav><Link href="/dashboard/today">Today</Link><Link href="/dashboard/operations">Athlete operations</Link><Link href="/dashboard/documents">Documents</Link><Link href="/dashboard/signing">Forg3 signing</Link><Link href="/dashboard/schedule">Schedule</Link><Link href="/dashboard/tasks">Tasks &amp; expenses</Link><Link href="/dashboard/organizations">Organizations</Link>{s.role === "recruiter" && <Link href="/dashboard/scouting">Scouting</Link>}{cfg.nav.map((n) => <Link key={n.href} href={n.href}>{n.label}</Link>)}<Link href="/dashboard/notifications">Notifications{unread > 0 ? ` (${countLabel(unread)})` : ""}</Link><Link href="/dashboard/settings">Settings</Link>{s.isAdmin && <Link href="/admin">Admin</Link>}</nav>
         <form action={logout} style={{ marginTop: 24 }}><button className="btn ghost" type="submit">Log out</button></form>
       </aside>
       <main className="main">{nudge && <p className="muted">🔒 Protect your account: <Link href="/mfa/setup" style={{ textDecoration: "underline" }}>turn on two-factor authentication</Link>.</p>}{children}</main>
+      <nav className="mobile-primary" aria-label="Mobile navigation"><Link href="/dashboard/today">Today</Link><Link href="/dashboard/documents">Documents</Link><Link href="/dashboard/deals">Messages</Link><Link href="/dashboard/signing">Signatures</Link></nav>
     </div>
   );
 }

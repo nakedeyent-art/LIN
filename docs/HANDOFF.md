@@ -1,3 +1,21 @@
+# Current local development handoff — 2026-10-10
+
+This section supersedes historical environment, branch, verification and workflow claims below.
+
+- Workspace: `/Users/rizzolini/Documents/ChatGPT/NIL`; repository `nakedeyent-art/LIN`.
+- Source confirmed by the user: `claude/sleepy-bohr-us0ind`, starting commit `2babd80ac36b8accf805d6f4e5dcfaab0098763f`.
+- Current branch: `codex/security-and-app-improvements`. The continuation is being committed for transfer on this branch; fetch it and verify the current commit. No PR or deployment has been made. Preserve any local changes. Historical Claude harness/trailer instructions below do not apply to this work.
+- Apply migrations 017–029 in order. Node supported versions are in `package.json`; this local run used Node 26 and Postgres 18. No `.env.local` was created.
+- Completed local implementation and its limits: [OPERATIONS_IMPLEMENTATION.md](OPERATIONS_IMPLEMENTATION.md).
+- Security changes and remaining release work: [security review](../security_best_practices_report.md), [improvement plan](IMPROVEMENT_PLAN.md).
+- Verification and independent review: [Gemini review handoff](GEMINI_REVIEW_HANDOFF.md), [portable test instructions](../e2e/README.md).
+- The Claude session URL was supplied but could not be retrieved. Do not claim its conversation was scanned.
+- Important policy change: recent MFA is required for signing/guardian approval and financial actions, even for otherwise optional-MFA roles. Support reset forces enrollment before app access; admin demotion preserves MFA.
+
+---
+
+## Historical handoff (preserved for context)
+
 # LIN — handoff for the next session
 
 Written at the end of a long build conversation so a fresh session (different model) can continue without re-deriving anything.

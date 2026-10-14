@@ -1,0 +1,21 @@
+import Link from "next/link";
+import { requireUser } from "@/lib/session";
+import { subjectsFor, canEditFamily } from "@/lib/access";
+import { listDocuments, DOCUMENT_CATEGORIES, categoryLabel, storageUsed, MAX_ATHLETE_STORAGE_BYTES } from "@/lib/documents";
+import { listDeals } from "@/lib/dealsdb";
+import { athleteSchedule } from "@/lib/sports-operations";
+import { DocumentUpload } from "@/components/document-upload";
+export default async function DocumentCenter({searchParams}:{searchParams:Promise<{athlete?:string;q?:string;category?:string;status?:string;from?:string;to?:string;error?:string;deal?:string;event?:string;uploader?:string}>}) {
+ const s=await requireUser(), p=await searchParams, athletes=await subjectsFor(s);
+ const selected=athletes.find(a=>a.id===p.athlete)??athletes[0];
+ const docs=selected?await listDocuments(s,selected.id):[];
+ const deals=(await listDeals(s.userId)).filter(d=>d.athlete_id===selected?.id),events=selected?await athleteSchedule(s,selected.id):[];
+ const usage=selected&&canEditFamily(selected)?await storageUsed(selected.id):null;
+ const q=(p.q??"").trim().toLowerCase().slice(0,100);
+ const filtered=docs.filter(d=>(!p.deal||d.deal_id===p.deal)&&(!p.event||d.event_id===p.event)&&(!p.uploader||d.created_by===p.uploader)&&(!q||[d.title,d.folder,...d.tags].join(" ").toLowerCase().includes(q))&&(!p.category||d.category===p.category)&&(!p.status||d.status===p.status)&&(!p.from||new Date(d.created_at).toISOString().slice(0,10)>=p.from)&&(!p.to||new Date(d.created_at).toISOString().slice(0,10)<=p.to));
+ return <><p className="eyebrow">Athlete operations</p><h1>Document center</h1><p className="tag">Versioned records, clear permissions and expiration tracking.</p>{p.error&&<p role="alert" className="error">{p.error}</p>}
+ <form method="get" className="filter-bar"><label>Athlete<select name="athlete" defaultValue={selected?.id}>{athletes.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select></label><label>Search<input type="text" name="q" defaultValue={p.q} placeholder="Title, folder or tag"/></label><label>Category<select name="category" defaultValue={p.category}><option value="">All categories</option>{DOCUMENT_CATEGORIES.map(c=><option key={c} value={c}>{categoryLabel(c)}</option>)}</select></label><label>Status<select name="status" defaultValue={p.status}><option value="">All statuses</option>{["active","completed","archived"].map(v=><option key={v}>{v}</option>)}</select></label><label>Deal<select name="deal" defaultValue={p.deal}><option value="">All deals</option>{deals.map(d=><option key={d.id} value={d.id}>{d.title}</option>)}</select></label><label>Event<select name="event" defaultValue={p.event}><option value="">All events</option>{events.map(e=><option key={e.id} value={e.id}>{e.name}</option>)}</select></label><label>Uploader<select name="uploader" defaultValue={p.uploader}><option value="">All uploaders</option>{[...new Map(docs.map(d=>[d.created_by,d.uploader_name])).entries()].map(([id,name])=><option key={id} value={id}>{name}</option>)}</select></label><label>From<input type="date" name="from" defaultValue={p.from}/></label><label>To<input type="date" name="to" defaultValue={p.to}/></label><button type="submit" className="btn ghost">Filter</button></form>
+ {selected&&canEditFamily(selected)&&<DocumentUpload athleteId={selected.id}/>}
+ {usage&&<p className="muted">Storage: {(usage.bytes/1048576).toFixed(1)} MB of {MAX_ATHLETE_STORAGE_BYTES/1048576} MB used across {usage.documents} document{usage.documents===1?"":"s"}.</p>}
+ <section className="work-panel"><table><thead><tr><th>Document</th><th>Category</th><th>Folder / tags</th><th>Expires</th><th>Status</th></tr></thead><tbody>{filtered.map(d=><tr key={d.id}><td><Link className="record-link" href={`/dashboard/documents/${d.id}`}>{d.title}</Link></td><td>{categoryLabel(d.category)}</td><td>{[d.folder,...d.tags].filter(Boolean).join(" · ")||"—"}</td><td>{d.expires_on??"—"}{d.expires_on&&d.expires_on<new Date().toISOString().slice(0,10)&&<span className="expiration-alert"> · Expired</span>}</td><td>{d.status}</td></tr>)}</tbody></table>{!filtered.length&&<p className="empty-state">No documents match this view.</p>}</section></>;
+}

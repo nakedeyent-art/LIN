@@ -1,13 +1,10 @@
+import { B, LOG, browserOptions, sql, dbErr, mk, submitAndWait } from "./runtime.mjs";
 import { chromium } from "playwright";
-import { execSync, spawnSync } from "node:child_process";
 import { code, nowStep, totpAt } from "./mfa-helper.mjs";
 import { readFileSync } from "node:fs";
-const B = "http://localhost:3113";
-const br = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium" });
+const br = await chromium.launch(browserOptions);
 let fails = 0, total = 0;
 const rec = (ok, k, extra = "") => { total++; if (!ok) fails++; console.log((ok ? "PASS " : "FAIL ") + k.padEnd(76) + (ok ? "" : String(extra).slice(0, 300))); };
-const sql = (q) => execSync(`su postgres -c "psql lin -At -q"`, { input: q }).toString().trim();
-const dbErr = (q) => { const r = spawnSync("su", ["postgres", "-c", "psql lin -At -q -v ON_ERROR_STOP=1"], { input: q }); return (r.stderr?.toString() ?? "") + (r.status ? " [exit " + r.status + "]" : ""); };
 const settle = async (p) => { await p.waitForLoadState("networkidle"); await p.waitForTimeout(1200); await p.waitForLoadState("networkidle"); };
 const text = async (p) => (await p.locator("main, .center").first().innerText({ timeout: 2500 }).catch(() => "")).replace(/\s+/g, " ");
 async function see(p, re, k) { re = new RegExp(re.source, "i"); let t = ""; for (let i = 0; i < 12; i++) { t = await text(p); if (re.test(t)) return rec(true, k); await p.waitForTimeout(500); } rec(false, k, `got=${t}`); }
@@ -16,14 +13,13 @@ async function made(f) {
   const ctx = await br.newContext(); const p = await ctx.newPage(); await p.goto(B + "/signup"); await p.waitForSelector("[name=name]");
   await p.fill("[name=name]", f.name); await p.fill("[name=email]", f.email); await p.fill("[name=password]", OLD); await p.check(`[name=role][value=${f.role}]`);
   for (const k of ["sport", "birth_date", "guardian_email"]) if (f[k]) await p.fill(`[name=${k}]`, f[k]);
-  await p.click("button[type=submit]"); await settle(p); sql(`update users set email_verified_at=now() where email='${f.email}'`); await p.goto(B + "/dashboard"); await settle(p); return p;
+  await submitAndWait(p, "button[type=submit]"); await settle(p); sql(`update users set email_verified_at=now() where email='${f.email}'`); await p.goto(B + "/dashboard"); await settle(p); return p;
 }
-const LOG = "/tmp/claude-0/mail.log";
 const all = () => readFileSync(LOG, "utf8").split("[mail:dev]").filter((m) => /subject=(New message on a NIL deal|NIL deal update|You have a new NIL offer)/.test(m));
 const base = all().length; const mails = () => all().slice(base);
 
 
-const login = async (p, email, pw = OLD) => { await p.goto(B + "/login"); await p.fill("[name=email]", email); await p.fill("[name=password]", pw); await p.click("button[type=submit]"); await settle(p); };
+const login = async (p, email, pw = OLD) => { await p.goto(B + "/login"); await p.fill("[name=email]", email); await p.fill("[name=password]", pw); await submitAndWait(p, "button[type=submit]"); await settle(p); };
 const bell = async (p) => { await p.goto(B + "/dashboard"); await settle(p); return (await p.locator(".side nav a:has-text('Notifications')").innerText()).replace(/\s+/g, " "); };
 const logStart = readFileSync(LOG, "utf8").length;
 const mailsTo = (to, subj) => readFileSync(LOG, "utf8").slice(logStart).split("[mail:dev]").filter((m) => m.includes(`to=${to} subject=${subj}`));
@@ -36,12 +32,11 @@ sql("truncate users cascade; truncate job_runs");
 const sam = await made({ name: "Sam Sponsor", email: "sam@x.com", role: "sponsor" });
 const root = await made({ name: "Root Admin", email: "root@x.com", role: "parent" });
 const second = await made({ name: "Second Admin", email: "second@x.com", role: "parent" });
-const mk = (args) => spawnSync("node", ["scripts/" + args[0], ...args.slice(1)], { cwd: "/home/user/LIN", env: { ...process.env, DATABASE_URL: "postgres://lin:lin@localhost:5432/lin" } });
 const path = (p) => new URL(p.url()).pathname;
 const resetStep = () => sql("update user_mfa set last_used_step = null");
 const goto = async (p, u) => { await p.goto(B + u); await settle(p); };
 const newSession = async (email) => { const p = await br.newContext().then((c) => c.newPage()); await login(p, email); return p; };
-const verifyWith = async (p, v) => { await p.fill("input[name=code]", v); await p.click("main button:text-is('Verify'), button:text-is('Verify')"); await settle(p); };
+const verifyWith = async (p, v) => { await p.fill("input[name=code]", v); await submitAndWait(p, "main button:text-is('Verify'), button:text-is('Verify')"); await settle(p); };
 const logLen = () => readFileSync(LOG, "utf8").length;
 
 // ===== before anyone is admin =====
@@ -65,7 +60,7 @@ rec(!sql("select secret_sealed from user_mfa where user_id='" + id("root@x.com")
 rec(sql("select enabled_at is null from user_mfa where user_id='" + id("root@x.com") + "'") === "t", "enrolment stays pending until a code proves it");
 await goto(root, "/mfa/setup");
 rec((await root.locator("[data-testid=mfa-secret]").innerText()).replace(/\s/g, "") === secret, "reloading keeps the same secret (the QR doesn't change under you)");
-const enroll = async (p, c, pw = OLD) => { await p.fill("input[name=code]", c); await p.fill("input[name=password]", pw); await p.click("button:text-is('Turn on two-factor')"); await settle(p); };
+const enroll = async (p, c, pw = OLD) => { await p.fill("input[name=code]", c); await p.fill("input[name=password]", pw); await submitAndWait(p, "button:text-is('Turn on two-factor')"); await settle(p); };
 await enroll(root, "000000"); await see(root, /code isn't right/, "a wrong code is refused");
 await enroll(root, code(secret), "wrong-password-x"); await see(root, /password is incorrect/, "a wrong password is refused");
 rec(sql("select enabled_at is null from user_mfa where user_id='" + id("root@x.com") + "'") === "t", "still pending after failures");
@@ -172,7 +167,7 @@ rec(mk(["reset-admin-mfa.mjs", "root@x.com", "Lost phone and recovery codes, ver
 rec(sql(`select count(*) from user_mfa where user_id='${id("root@x.com")}'`) === "0" && sql(`select count(*) from user_recovery_codes where user_id='${id("root@x.com")}'`) === "0" && sql(`select count(*) from sessions where user_id='${id("root@x.com")}'`) === "0", "enrolment, codes and sessions are gone");
 rec(sql("select count(*) from admin_audit where action='mfa_reset'") === "1", "the reset is audited");
 let s8 = await newSession("root@x.com"); await goto(s8, "/admin"); rec(path(s8) === "/mfa/setup", "the admin must enrol again", path(s8));
-rec(mk(["make-admin.mjs", "second@x.com", "--revoke"]).status === 0 && sql(`select count(*) from user_mfa where user_id='${id("second@x.com")}'`) === "0", "revoking admin rights also removes their two-factor data");
+rec(mk(["make-admin.mjs", "second@x.com", "--revoke"]).status === 0 && sql(`select count(*) from user_mfa where user_id='${id("second@x.com")}'`) === "1", "revoking admin rights preserves account two-factor protection");
 rec(/Turned on two-factor|Two-factor reset/.test(await (async () => { await goto(s8, "/mfa/setup"); const sec = (await s8.locator("[data-testid=mfa-secret]").innerText()).replace(/\s/g, ""); await s8.fill("input[name=code]", code(sec)); await s8.fill("input[name=password]", OLD); await s8.click("button:text-is('Turn on two-factor')"); await settle(s8); await s8.locator("input[type=checkbox]").check(); await s8.locator("a:text-is('Continue')").click(); await settle(s8); await goto(s8, "/admin/audit"); return text(s8); })()), "audit log shows the two-factor events with readable labels");
 
 console.log(fails ? `\n${fails} FAILED (${total} checks)` : `\nALL PASSED (${total} checks)`);

@@ -1,16 +1,36 @@
-# End-to-end scripts
+# Local verification
 
-Plain Node scripts that drive a real browser (Playwright + Chromium) against a locally running app and the real Postgres database.
-They were written during development and kept here so they aren't lost; they are **not** part of `npm test` (that's the vitest unit suite).
+Unit tests: `npm test`. Typecheck: `npm run typecheck`. Production compilation: `npm run build`.
 
-- Run with the app up: `bash e2e/start-app-nopay.sh` (or `-news.sh`, which also enables the local-only RSS fetch, or `-payments.sh`, which needs `node scripts/mock-stripe.mjs` on :4010).
-  The scripts expect port **3113**, a Postgres `lin` database (user/pass `lin`/`lin`), and the app's stdout redirected to `/tmp/claude-0/mail.log`
-  (they read emailed links from it): `bash e2e/start-app-news.sh > /tmp/claude-0/mail.log 2>&1 &`.
-- Then: `node e2e/e2e16.mjs` (prints PASS/FAIL per check and `ALL PASSED (n checks)`). **Each script truncates the `users` table (cascade).**
-- Needs the `playwright` package resolvable from Node (in the cloud sandbox: `ln -sfn /opt/node-tools/node_modules e2e/node_modules`, which git ignores) (it is installed globally in the cloud sandbox) and Chromium at `/opt/pw-browsers/chromium`; some paths are hard-coded to the sandbox (`/home/user/LIN`, `/tmp/claude-0/mail.log`, `su postgres -c psql lin`).
-- Which script covers what: e2e (auth) · e2e2 (verification/guardians) · e2e3 (deals) · e2e4 (real data/dashboards) · e2e5 (password reset) · e2e6 (settings, deletion) ·
-  e2e7 (guardian management) · e2e8 (scheduled jobs) · e2e9/10/11 (payments on / off / min amount + disputes) · e2e12 (messaging) · e2e13 (notifications + admin) ·
-  e2e14 (messaging safety) · e2e15 (news) · e2e16 (social feed + music) · e2e17 (admin MFA; e2e18 = MFA for ordinary accounts; `mfa-helper.mjs` is an independent TOTP implementation).
-- Known baseline failures (test bugs, not app bugs): **e2e4** "athlete home: verified minutes / nutrition compliance" and "sponsor pipeline computed from real deals"
-  (not root-caused); **e2e6** "trainer account deleted" and "user row anonymized and flagged" (psql prints `t` not `true`; an operator-precedence slip in the SQL).
-  e2e3 has one timing flake ("unlinked minor can't be listed") that passes on re-run.
+## Portable suites
+
+Use a **disposable local PostgreSQL database whose name ends in `_e2e`**. Integration and browser suites truncate users and related records. Run database suites sequentially; never point them at real data.
+
+```sh
+export E2E_DATABASE_URL=postgres://YOUR_LOCAL_USER@127.0.0.1:5432/lin_e2e
+DATABASE_URL="$E2E_DATABASE_URL" npm run db:migrate
+npm run test:integration
+npx playwright install chromium
+npm run test:app
+```
+
+Keep the test app running and execute one suite at a time in another terminal with the same `E2E_DATABASE_URL`:
+
+```sh
+npm run test:e2e
+npm run test:e2e:admin
+npm run test:e2e:settings
+npm run test:e2e:operations
+```
+
+These run e2e18 (ordinary MFA), e2e17 (admin MFA), e2e6 (settings/deletion), e2e19 (connected operations, signing, schedule, travel), e2e20 (rate limits; start the app with `E2E_TRUST_PROXY=1`) and e2e21 (passkeys, via Chromium's virtual authenticator). Do not edit project files while a browser suite runs against `next dev`: a hot reload mid-test remounts client forms and produces false failures. The app defaults to localhost:3113 and writes disposable development mail to `.test-output/mail.log`. `E2E_BASE_URL`, `E2E_MAIL_LOG` and `E2E_CHROMIUM_PATH` can override those defaults. `psql` must be on PATH. The runner clears real payment/mail credentials. MFA uses the development fallback key; never use it in production.
+
+Playwright is now a project dependency. The older cloud sandbox can still use `ln -sfn /opt/node-tools/node_modules e2e/node_modules` if needed; normal local installs do not need that symlink.
+
+The two old e2e6 assertions (Postgres boolean formatting and SQL precedence) are fixed. Latest passing counts are recorded in `docs/GEMINI_REVIEW_HANDOFF.md`. Test output is local and ignored by Git; do not publish mail logs containing test tokens.
+
+## Legacy suites
+
+Ported to `runtime.mjs` and passing on this branch; see the "Legacy browser suites" section of `docs/OPERATIONS_IMPLEMENTATION.md` for counts, env and the behaviour changes they surfaced (Forg3 signing order, recent-MFA for money decisions, per-IP rate limits cleared per suite).
+
+Coverage: e2e auth; e2e2 verification/guardians; e2e3 deals; e2e4 real data; e2e5 reset; e2e7 guardians; e2e8 jobs (phase 2 with a failing mail key); e2e9–11 mocked payments; e2e12 messaging; e2e13 notifications/admin; e2e14 safety; e2e15 news; e2e16 social/music.
