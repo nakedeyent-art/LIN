@@ -85,3 +85,22 @@ How to run them: start the app with `node e2e/start-local.mjs` (payments suites 
 **Product bugs found by the legacy suites and fixed:**
 - The message content filter was applied verbatim to deal terms, so "Two Instagram posts" was refused for any minor's deal. Deal titles, deliverables and work items now allow platform names while still blocking contact details, links and handles (`platformsOk`).
 - Deal actions and agreement generation asked for a second factor before checking standing, so an unauthorised sponsor (or a minor athlete) was sent to MFA set-up instead of being refused. Standing is now checked first.
+
+### Gemini independent review (2026-10-14) — triage
+Gemini reviewed `76de1b5` read-only and reported 6 defects, 2 hypotheses and 4 UX items. Each was verified against the code before acting.
+
+Fixed (with tests):
+1. **Re-issued deal agreement notified signers with the voided envelope's link.** Confirmed; the notice now points at the new envelope and is sent after it exists (`lib/deal-signing.ts`; `tests/deal-signing.integration.test.ts`).
+2. **Guardian consent outlived the guardian.** Confirmed; the schedule now shows consent only while its giver is a current guardian (`guardian_links`), removing a guardian clears the consents they gave, and erasure clears consents given by the erased account (`lib/sports-operations.ts`, `app/dashboard/team/guardian-actions.ts`, `lib/operations-erasure.ts`; `tests/events.integration.test.ts`).
+4. **Legacy contract signing asked for MFA before checking standing.** Confirmed; standing is now checked first (`app/dashboard/deals/contract-actions.ts`; `tests/actions.integration.test.ts` rewritten so every MFA-gate case is a transition the actor is entitled to make, plus a no-standing case).
+5. **Data export omitted passkeys.** Confirmed; name, device type, backup state and timestamps are exported (never key material).
+6. **Organizer excluded from `accessibleEvent`.** Confirmed (a leftover from the earlier family-only rule); the organizer is back in scope.
+- Hypothesis 1 (SigV4 `content-length`): `content-length` is no longer signed, so the signed set matches exactly what is sent.
+- UX 1–4: explicit `htmlFor` on the passkey name field; the field placer clamps width to the page and supports touch (`touch-action: none`); adult athletes see "no guardian consent needed" instead of a misleading "No guardian consent recorded".
+
+Not a defect (rejected with reasoning):
+3. **"Unapproved team member allowed as agent/school/internal recipient."** `guardian_approved` is the *parent* relationship's flag. Coach/manager/trainer relationships are created only by accepting an invite the family sent and are inserted with `guardian_approved=false` by design (`app/connect/actions.ts`); `subjectsFor` likewise ignores the flag for non-parent roles. Requiring it in `recipientAuthorized` would block every legitimately invited agent or school signer. The same reasoning fixed an over-strict check of ours in `lib/sports-events.ts` (`knownAthlete`).
+
+Deferred (product gap, documented):
+- Hypothesis 2: travel stops store instants but no time zone, so turnaround warnings across zones are approximate. Fix is a per-stop zone like events have.
+- Office→PDF conversion, real bucket/ClamAV/Stripe/email soak, road routing: unchanged, see above.
