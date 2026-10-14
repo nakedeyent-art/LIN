@@ -83,6 +83,8 @@ export async function removeGuardian(formData: FormData) {
     if (!check.ok) { await client.query("ROLLBACK"); return done("error", check.error); }
     leavesNone = check.leavesNone;
     await client.query("DELETE FROM athlete_relationships WHERE id=$1", [relId]);
+    // Consent for events was that guardian's decision; it does not outlive their authority.
+    await client.query("UPDATE sports_attendees SET guardian_consent_by=NULL, guardian_consent_at=NULL WHERE athlete_id=$1 AND guardian_consent_by=$2", [rel.athlete_id, rel.member_id]);
     if (leavesNone) await unlistIfNoGuardian(rel.athlete_id, client);
     await logGuardianEvent(rel.athlete_id, s.userId, self ? "stepped_down" : "removed", self ? undefined : rel.full_name, client);
     const a = (await client.query("SELECT email, full_name FROM users WHERE id=$1", [rel.athlete_id])).rows[0];

@@ -27,7 +27,6 @@ export async function prepareDealSigning(s:Session,dealId:string) {
    await c.query("UPDATE signing_envelopes SET status='voided' WHERE id=$1",[existing.id]);
    await c.query("INSERT INTO signing_events(envelope_id,actor_id,action) VALUES($1,$2,'envelope.reissued_authority_changed')",[existing.id,s.userId]);
    await c.query('DELETE FROM signing_sessions WHERE envelope_id=$1',[existing.id]);
-   await c.query("INSERT INTO notifications(user_id,kind,title,href) SELECT r.user_id,'account','Agreement re-issued: who signs has changed','/dashboard/signing/'||$2::text FROM signing_recipients r WHERE r.envelope_id=$1",[existing.id,existing.id]);
   }
   if((await c.query('SELECT 1 FROM contract_signatures WHERE contract_id=$1',[k.id])).rowCount)throw new Error('This agreement already has a legacy signature. Finish it in the original agreement view.');
   const minor=(await c.query("SELECT birth_date>CURRENT_DATE-INTERVAL '18 years' AS minor FROM athlete_profiles WHERE user_id=$1",[d.athlete_id])).rows[0].minor;
@@ -43,6 +42,8 @@ export async function prepareDealSigning(s:Session,dealId:string) {
    await c.query("INSERT INTO signing_fields(envelope_id,recipient_id,kind,label,page,x,y,width) VALUES($1,$2,'signature',$3,$4,.1,$5,.7),($1,$2,'date','Date',$4,.1,$6,.5)",[env.id,recipient.id,`${p.capacity} full name`,page,.15+index*.3,.23+index*.3]);
   }
   await c.query("UPDATE signing_envelopes SET status='sent' WHERE id=$1",[env.id]);
+  // Tell the old envelope's recipients where to go now: the re-issued agreement, not the voided one.
+  if(existing)await c.query("INSERT INTO notifications(user_id,kind,title,href) SELECT DISTINCT r.user_id,'account','Agreement re-issued: who signs has changed','/dashboard/signing/'||$2::text FROM signing_recipients r WHERE r.envelope_id=$1",[existing.id,env.id]);
   await c.query("INSERT INTO signing_events(envelope_id,actor_id,action) VALUES($1,$2,'envelope.generated_from_deal'),($1,$2,'envelope.sent')",[env.id,s.userId]);
   await c.query('COMMIT');return env.id as string;
  }catch(e){await c.query('ROLLBACK');throw e;}finally{c.release();}

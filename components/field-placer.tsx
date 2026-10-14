@@ -47,12 +47,15 @@ export function FieldPlacer({ src, fields, recipients, kinds, envelopeId, action
     const r = e.currentTarget.getBoundingClientRect();
     return { x: Math.min(90, Math.max(0, Math.round(((e.clientX - r.left) / r.width) * 100))), y: Math.min(95, Math.max(0, Math.round(((e.clientY - r.top) / r.height) * 100))) };
   };
-  const onDown = (page: number) => (e: React.MouseEvent<HTMLDivElement>) => { const p = pct(e); setDrag({ page, ...p }); setPos((o) => ({ ...o, page, x: p.x, y: p.y })); };
+  const onDown = (page: number) => (e: React.MouseEvent<HTMLDivElement>) => { const p = pct(e); setDrag({ page, ...p }); setPos((o) => ({ ...o, page, x: p.x, y: p.y, width: Math.min(o.width, 100 - p.x) })); };
   const onUp = (page: number) => (e: React.MouseEvent<HTMLDivElement>) => {
     if (!drag || drag.page !== page) return setDrag(null);
     const p = pct(e), width = Math.max(MIN_WIDTH, Math.min(100 - drag.x, p.x - drag.x));
     setPos((o) => ({ ...o, width: p.x - drag.x >= MIN_WIDTH ? width : o.width })); setDrag(null);
   };
+  const touchAt = (t: React.TouchEvent<HTMLDivElement>) => { const r = t.currentTarget.getBoundingClientRect(), p = t.changedTouches[0]; return { x: Math.min(90, Math.max(0, Math.round(((p.clientX - r.left) / r.width) * 100))), y: Math.min(95, Math.max(0, Math.round(((p.clientY - r.top) / r.height) * 100))) }; };
+  const onTouchStart = (page: number) => (t: React.TouchEvent<HTMLDivElement>) => { const p = touchAt(t); setDrag({ page, ...p }); setPos((o) => ({ ...o, page, x: p.x, y: p.y, width: Math.min(o.width, 100 - p.x) })); };
+  const onTouchEnd = (page: number) => (t: React.TouchEvent<HTMLDivElement>) => { if (!drag || drag.page !== page) return setDrag(null); const p = touchAt(t), w = p.x - drag.x; setPos((o) => ({ ...o, width: w >= MIN_WIDTH ? Math.min(100 - drag.x, w) : o.width })); setDrag(null); };
   const num = (k: keyof typeof pos, min: number, max: number) => (e: React.ChangeEvent<HTMLInputElement>) => { const v = Number(e.target.value); if (Number.isFinite(v)) setPos((o) => ({ ...o, [k]: Math.min(max, Math.max(min, v)) })); };
   const who = (id: string) => recipients.find((r) => r.id === id)?.name ?? "";
 
@@ -62,7 +65,7 @@ export function FieldPlacer({ src, fields, recipients, kinds, envelopeId, action
     <div className="placer-pages">
       {pages.map((size, i) => {
         const page = i + 1;
-        return <div key={page} className="placer-page" style={{ width: size.width, height: size.height }} onMouseDown={onDown(page)} onMouseUp={onUp(page)} role="img" aria-label={`Page ${page} of the agreement`}>
+        return <div key={page} className="placer-page" style={{ width: size.width, height: size.height }} onMouseDown={onDown(page)} onMouseUp={onUp(page)} onTouchStart={onTouchStart(page)} onTouchEnd={onTouchEnd(page)} role="img" aria-label={`Page ${page} of the agreement`}>
           <canvas ref={(el) => { canvases.current[i] = el; }} aria-hidden="true" />
           {fields.filter((f) => f.page === page).map((f) => <div key={f.id} className="placer-field existing" style={{ left: `${f.x * 100}%`, top: `${f.y * 100}%`, width: `${f.width * 100}%` }} title={`${f.label} · ${who(f.recipient)}`}>{f.label}</div>)}
           {pos.page === page && <div className="placer-field pending" style={{ left: `${pos.x}%`, top: `${pos.y}%`, width: `${pos.width}%` }}>New field</div>}
@@ -76,9 +79,9 @@ export function FieldPlacer({ src, fields, recipients, kinds, envelopeId, action
       <label>Label<input type="text" name="label" maxLength={120} required /></label>
       <div className="filter-bar">
         <label>Page<input type="number" name="page" min="1" max="200" required value={pos.page} onChange={num("page", 1, 200)} /></label>
-        <label>Left (%)<input type="number" name="x" min="0" max="90" required value={pos.x} onChange={num("x", 0, 90)} /></label>
+        <label>Left (%)<input type="number" name="x" min="0" max="90" required value={pos.x} onChange={(e) => { num("x", 0, 90)(e); setPos((o) => ({ ...o, width: Math.min(o.width, 100 - o.x) })); }} /></label>
         <label>Top (%)<input type="number" name="y" min="0" max="95" required value={pos.y} onChange={num("y", 0, 95)} /></label>
-        <label>Width (%)<input type="number" name="width" min="5" max="100" required value={pos.width} onChange={num("width", 5, 100)} /></label>
+        <label>Width (%)<input type="number" name="width" min="5" max={100 - pos.x} required value={pos.width} onChange={num("width", 5, 100 - pos.x)} /></label>
       </div>
       <label><span><input name="required" type="checkbox" defaultChecked /> Required field</span></label>
       <button className="btn" type="submit">Add field</button>

@@ -133,7 +133,7 @@ export async function addAttendee(actor: Actor, eventId: string, athleteId: stri
 /** An athlete the organizer may put on an event: themselves, a minor they are a current guardian of, or someone whose approved relationship they hold. */
 async function knownAthlete(c: PoolClient, userId: string, athleteId: string): Promise<boolean> {
   return !!(await c.query(`SELECT 1 WHERE $1::uuid=$2::uuid OR EXISTS(SELECT 1 FROM guardian_links WHERE athlete_id=$2::uuid AND member_id=$1::uuid)
-    OR EXISTS(SELECT 1 FROM athlete_relationships WHERE athlete_id=$2::uuid AND member_id=$1::uuid AND guardian_approved)`, [userId, athleteId])).rowCount;
+    OR EXISTS(SELECT 1 FROM athlete_relationships WHERE athlete_id=$2::uuid AND member_id=$1::uuid AND relationship <> 'parent')`, [userId, athleteId])).rowCount;   // team invites are accepted on the family's behalf; guardian_approved is the parent flag
 }
 
 /** Removes an athlete from an event. The organizer or that athlete's own family can, and an event is never left with nobody (cancel it instead). */

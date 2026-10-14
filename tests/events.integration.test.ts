@@ -194,3 +194,17 @@ describe('venue time zones', () => {
     expect((await updateEvent(guardian, ev, edit({ timezone: 'Mars/Olympus' }))).ok).toBe(false);
   });
 });
+
+describe('consent only counts while the guardian who gave it is a guardian', () => {
+  it('is hidden on the schedule once the guardian link ends, and erased with the guardian\'s account', async () => {
+    const { athleteSchedule } = await import('../lib/sports-operations');
+    const { eraseOperations } = await import('../lib/operations-erasure');
+    const me = { userId: athlete.userId, role: 'athlete' as const, name: 'A', email: 'a@example.test', emailVerified: true, isAdmin: false };
+    expect((await athleteSchedule(me, athlete.userId))[0].guardian_consent_at).not.toBeNull();
+    await db().query('DELETE FROM athlete_relationships WHERE member_id=$1', [guardian.userId]);
+    expect((await athleteSchedule(me, athlete.userId))[0].guardian_consent_at).toBeNull();
+    const c = await db().connect();
+    try { await c.query('BEGIN'); await c.query('UPDATE users SET deleted_at=now() WHERE id=$1', [guardian.userId]); await eraseOperations(c, guardian.userId); await c.query('COMMIT'); } finally { c.release(); }
+    expect((await db().query('SELECT guardian_consent_by,guardian_consent_at FROM sports_attendees WHERE event_id=$1', [ev])).rows[0]).toEqual({ guardian_consent_by: null, guardian_consent_at: null });
+  });
+});

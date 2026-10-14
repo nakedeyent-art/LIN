@@ -36,7 +36,6 @@ export async function s3Request(cfg: StorageConfig, method: "PUT" | "GET" | "DEL
   const payloadHash = sha256(body ?? new Uint8Array());
   const headers: Record<string, string> = { host, "x-amz-content-sha256": payloadHash, "x-amz-date": amzDate };
   if (contentType) headers["content-type"] = contentType;
-  if (body) headers["content-length"] = String(body.byteLength);
   const signedNames = Object.keys(headers).sort();
   const canonicalHeaders = signedNames.map((h) => `${h}:${headers[h].trim()}\n`).join(""), signedHeaders = signedNames.join(";");
   const canonical = [method, path, "", canonicalHeaders, signedHeaders, payloadHash].join("\n");
@@ -45,7 +44,7 @@ export async function s3Request(cfg: StorageConfig, method: "PUT" | "GET" | "DEL
   const kDate = hmac(`AWS4${cfg.secretKey}`, day), kRegion = hmac(kDate, cfg.region), kService = hmac(kRegion, "s3"), kSigning = hmac(kService, "aws4_request");
   const signature = createHmac("sha256", kSigning).update(toSign).digest("hex");
   const auth = `AWS4-HMAC-SHA256 Credential=${cfg.accessKey}/${scope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
-  const { host: _h, "content-length": _l, ...sendHeaders } = headers; void _h; void _l;   // fetch sets host and content-length itself
+  const { host: _h, ...sendHeaders } = headers; void _h;   // fetch sets host (and content-length, which is deliberately not signed) itself
   return fetchImpl(`${base.protocol}//${host}${path}`, { method, headers: { ...sendHeaders, authorization: auth }, body: body ? new Uint8Array(body) : undefined, signal: AbortSignal.timeout(30_000) });
 }
 

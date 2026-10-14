@@ -25,8 +25,30 @@ beforeEach(async () => {
 afterAll(async () => { await db().end(); });
 
 describe("financial Server Actions enforce MFA before changing anything", () => {
-  it.each(["approve", "complete", "request_cancel", "agree_cancel"])("guards the %s transition", async action => {
+  // Standing and state are checked first (an outsider is refused, not sent to MFA set-up), so each case sets up a transition the actor
+  // is entitled to make; the second factor is then the next gate, and nothing changes before it.
+  const funded = () => db().query("INSERT INTO deal_payments(deal_id,payee_user_id,amount_cents,fee_cents,status) VALUES($1,$2,10000,0,'funded')", [deal, athlete]);
+  it("guards the approve transition", async () => {
+    const other = (await db().query("INSERT INTO users(email,full_name,role,password_hash,email_verified_at) VALUES('other@example.test','Other Sponsor','sponsor','test-only',NOW()) RETURNING id")).rows[0].id;
+    await db().query("UPDATE deals SET status='guardian_review', counterparty_id=$2 WHERE id=$1", [deal, other]);
+    await db().query("UPDATE users SET role='parent' WHERE id=$1", [actor]);
+    await db().query("INSERT INTO athlete_relationships(athlete_id,member_id,relationship,guardian_approved) VALUES($1,$2,'parent',TRUE)", [athlete, actor]);
+    await expect(dealAction(form({ deal_id: deal, action: "approve" }))).rejects.toThrow("REDIRECT /mfa/setup?");
+    expect((await db().query("SELECT status FROM deals WHERE id=$1", [deal])).rows[0].status).toBe("guardian_review");
+  });
+  it.each(["complete", "request_cancel"])("guards the %s transition", async action => {
+    await funded();
     await expect(dealAction(form({ deal_id: deal, action }))).rejects.toThrow("REDIRECT /mfa/setup?");
+    expect((await db().query("SELECT status, cancel_requested_side FROM deals WHERE id=$1", [deal])).rows[0]).toEqual({ status: "active", cancel_requested_side: null });
+  });
+  it("guards the agree_cancel transition", async () => {
+    await funded();
+    await db().query("UPDATE deals SET cancel_requested_side='athlete_side', cancel_requested_by=$2, cancel_requested_at=NOW() WHERE id=$1", [deal, athlete]);
+    await expect(dealAction(form({ deal_id: deal, action: "agree_cancel" }))).rejects.toThrow("REDIRECT /mfa/setup?");
+    expect((await db().query("SELECT status FROM deals WHERE id=$1", [deal])).rows[0].status).toBe("active");
+  });
+  it("refuses an action the actor has no standing for before asking for a second factor", async () => {
+    await expect(dealAction(form({ deal_id: deal, action: "approve" }))).rejects.toThrow("REDIRECT /dashboard/deals/");   // a sponsor cannot approve: told so, no MFA prompt
     expect((await db().query("SELECT status FROM deals WHERE id=$1", [deal])).rows[0].status).toBe("active");
   });
   it("guards contract signatures", async () => {

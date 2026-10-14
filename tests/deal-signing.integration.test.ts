@@ -66,6 +66,8 @@ describe('authority changing while an agreement waits for signature', () => {
     expect((await recipients(fresh)).map((r) => [r.capacity, r.user_id])).toEqual([['sponsor', sponsor.userId], ['athlete', athlete.userId]]);
     expect((await db().query("SELECT status FROM signing_envelopes WHERE id=$1", [fresh])).rows[0].status).toBe('sent');
     expect((await db().query("SELECT count(*)::int AS n FROM signing_events WHERE envelope_id=$1 AND action='envelope.reissued_authority_changed'", [old])).rows[0].n).toBe(1);
+    const hrefs = (await db().query("SELECT DISTINCT href FROM notifications WHERE title LIKE 'Agreement re-issued%'")).rows.map((r) => r.href);
+    expect(hrefs).toEqual([`/dashboard/signing/${fresh}`]);                       // signers are sent to the live envelope, never the voided one
     expect(await prepareDealSigning(sponsor, dealId)).toBe(fresh);                       // and it is stable afterwards
   });
   it('when the guardian is removed and another is linked, the agreement is reissued to the current guardian', async () => {

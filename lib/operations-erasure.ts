@@ -13,6 +13,7 @@ export async function eraseOperations(c:PoolClient,id:string) {
  await c.query("DELETE FROM travel_stop_contacts WHERE stop_id IN (SELECT s.id FROM travel_stops s JOIN travel_routes r ON r.id=s.route_id WHERE r.athlete_id=$1)",[id]);   // third parties' details go with the trip
  await c.query("UPDATE travel_stops SET name='Removed stop',details='',hotel='',contact='' WHERE route_id IN (SELECT id FROM travel_routes WHERE athlete_id=$1)",[id]);
  await c.query("UPDATE travel_routes SET name='Removed route' WHERE athlete_id=$1",[id]);
+ await c.query('UPDATE sports_attendees SET guardian_consent_by=NULL,guardian_consent_at=NULL WHERE guardian_consent_by=$1',[id]);   // consent they gave as a guardian goes with them
  await c.query("UPDATE operational_tasks SET title='Removed task',status='cancelled' WHERE athlete_id=$1 OR created_by=$1 OR assigned_to=$1",[id]);
  await c.query("UPDATE operational_expenses SET description='Removed expense' WHERE athlete_id=$1 OR created_by=$1",[id]);
  await c.query('DELETE FROM scouting_followups WHERE owner_id=$1 OR report_id IN (SELECT id FROM scouting_reports WHERE athlete_id=$1 OR author_id=$1)',[id]);

@@ -25,7 +25,7 @@ export function AddPasskey({ begin, finish }: { begin: () => Promise<PublicKeyCr
   if (supported === null) return <p className="muted">Checking passkey support…</p>;
   if (!supported) return <p className="muted">This browser does not support passkeys.</p>;
   return <div>
-    <label>Passkey name<input type="text" value={name} onChange={(e) => setName(e.target.value)} maxLength={60} placeholder="e.g. Work laptop" /></label>
+    <label htmlFor="passkey-name">Passkey name</label><input id="passkey-name" type="text" value={name} onChange={(e) => setName(e.target.value)} maxLength={60} placeholder="e.g. Work laptop" />
     <p><button type="button" className="btn" disabled={busy} onClick={run}>{busy ? "Waiting for your device…" : "Add a passkey"}</button></p>
     <p role="status" aria-live="polite" className={status ? "error" : "muted"}>{status}</p>
   </div>;

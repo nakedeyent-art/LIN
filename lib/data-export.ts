@@ -47,6 +47,7 @@ export async function buildExport(userId: string) {
     emailPreferences: (await q("SELECT email_deal_updates, email_messages FROM users WHERE id=$1"))[0],
     securityActivity: await q("SELECT action, created_at FROM security_events WHERE user_id=$1 ORDER BY id"),
     twoFactor: (await q("SELECT enabled_at IS NOT NULL AS enabled, enabled_at FROM user_mfa WHERE user_id=$1"))[0] ?? { enabled: false },
+    passkeys: await q("SELECT name, device_type, backed_up, created_at, last_used_at FROM user_passkeys WHERE user_id=$1 ORDER BY created_at"),
     organizations: await q("SELECT o.name, m.role, m.joined_at, o.archived_at FROM organization_members m JOIN organizations o ON o.id=m.organization_id WHERE m.user_id=$1"),
     organizationInvitations: await q("SELECT o.name, i.status, i.created_at, i.expires_at FROM organization_invites i JOIN organizations o ON o.id=i.organization_id WHERE i.invited_user_id=$1"),
     paymentsAsPayee: await q("SELECT deal_id, amount_cents, fee_cents, status, created_at, released_at, refunded_at FROM deal_payments WHERE payee_user_id=$1"),

@@ -34,6 +34,7 @@ describe('personal data export', () => {
     expect(x.notifications).toHaveLength(1);
     expect(x.organizations).toEqual([expect.objectContaining({ name: 'Club', role: 'owner' })]);
     expect(x.twoFactor).toEqual({ enabled: false });
+    expect(x.passkeys).toEqual([]);
   });
   it('never includes another person’s messages or posts, or credentials', async () => {
     const mine = JSON.stringify(await buildExport(a));

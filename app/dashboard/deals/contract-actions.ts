@@ -21,6 +21,9 @@ export async function signContract(formData: FormData) {
   const back = (msg: string): never => redirect(`/dashboard/deals/${dealId}/contract?error=${encodeURIComponent(msg)}`);
   if (!UUID.test(dealId)) redirect("/dashboard/deals");
   if (formData.get("consent") !== "on") back("Tick the box to confirm you agree to sign electronically.");
+  // Standing first: someone with no part in this deal is refused, not sent to set up two-factor.
+  const peek = (await db().query("SELECT athlete_id, counterparty_id FROM deals WHERE id=$1", [dealId])).rows[0];
+  if (!peek || !(await capacityOn(s.userId, peek))) redirect("/dashboard/deals");
   await requireRecentMfa(s, `/dashboard/deals/${dealId}/contract`);
 
   const h = await headers();
