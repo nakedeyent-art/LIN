@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  generateDoubleEliminationBracket,
   generateSingleEliminationBracket,
   getRoundName,
   getSeedingPairs,
@@ -51,7 +52,7 @@ describe("Tournament Bracket & Match Scheduling Engine", () => {
     });
   });
 
-  describe("Bracket Generation (4 Teams)", () => {
+  describe("Bracket Generation (4 Teams Single Elimination)", () => {
     it("creates a 2-round bracket with 2 semifinal matches and 1 final", () => {
       const b = generateSingleEliminationBracket("Summer Invitational", "Basketball", TEAMS_4);
       expect(b.rounds.length).toBe(2);
@@ -74,7 +75,7 @@ describe("Tournament Bracket & Match Scheduling Engine", () => {
     });
   });
 
-  describe("Bracket Generation (8 Teams)", () => {
+  describe("Bracket Generation (8 Teams Single Elimination)", () => {
     it("creates a 3-round bracket with 4 QF, 2 SF, and 1 Finals", () => {
       const b = generateSingleEliminationBracket("Elite 8 Showcase", "Basketball", TEAMS_8);
       expect(b.rounds.length).toBe(3);
@@ -89,6 +90,41 @@ describe("Tournament Bracket & Match Scheduling Engine", () => {
       // QF match 2: 4 vs 5
       expect(b.rounds[0].matches[1].teamA?.seed).toBe(4);
       expect(b.rounds[0].matches[1].teamB?.seed).toBe(5);
+    });
+  });
+
+  describe("Double Elimination Bracket Engine", () => {
+    it("generates a 4-round double elimination bracket for 4 teams", () => {
+      const de = generateDoubleEliminationBracket("Gold Cup Double Elimination", "Basketball", TEAMS_4);
+      expect(de.format).toBe("double_elimination");
+      expect(de.rounds.length).toBe(4);
+
+      // Round 1 has winners SF1 & SF2
+      expect(de.rounds[0].matches.length).toBe(2);
+      expect(de.rounds[0].matches[0].bracketType).toBe("winners");
+
+      // Verify loserMatchId is configured to drop into Losers Bracket
+      expect(de.rounds[0].matches[0].loserMatchId).toBe("lb-r1");
+      expect(de.rounds[0].matches[0].loserMatchSlot).toBe("teamA");
+      expect(de.rounds[0].matches[1].loserMatchId).toBe("lb-r1");
+      expect(de.rounds[0].matches[1].loserMatchSlot).toBe("teamB");
+    });
+
+    it("advances winner to Winners Finals and sends loser to Losers Bracket", () => {
+      const de = generateDoubleEliminationBracket("Gold Cup Double Elimination", "Basketball", TEAMS_4);
+      // Team 1 wins against Team 4 (90 - 70)
+      const afterSF1 = updateMatchScore(de, "wb-sf1", 90, 70, true);
+      const sf1 = afterSF1.rounds[0].matches[0];
+      expect(sf1.winnerId).toBe("t1");
+      expect(sf1.loserId).toBe("t4");
+
+      // Verify winner (Metro Hawks) went to Winners Final as teamA
+      const wbFinal = afterSF1.rounds[1].matches[0];
+      expect(wbFinal.teamA?.name).toBe("Metro Hawks");
+
+      // Verify loser (Lone Star Rebels) dropped into Losers Elimination as teamA
+      const lbR1 = afterSF1.rounds[1].matches[1];
+      expect(lbR1.teamA?.name).toBe("Lone Star Rebels");
     });
   });
 

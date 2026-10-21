@@ -3,6 +3,7 @@
 import { useState } from "react";
 import {
   generateSingleEliminationBracket,
+  generateDoubleEliminationBracket,
   updateMatchScore,
   type TournamentBracket as BracketType,
   type Team,
@@ -29,6 +30,7 @@ export function TournamentBracketManager({
   initialSport?: string;
   userRole?: string;
 }) {
+  const [format, setFormat] = useState<"single_elimination" | "double_elimination">("single_elimination");
   const [bracket, setBracket] = useState<BracketType>(() =>
     generateSingleEliminationBracket(initialEventName, initialSport, SAMPLE_TEAMS_8)
   );
@@ -41,6 +43,15 @@ export function TournamentBracketManager({
   const canManageScores = ["tournament_manager", "coach", "gym_owner", "manager", "admin"].includes(
     userRole ?? "tournament_manager"
   );
+
+  const handleFormatChange = (newFormat: "single_elimination" | "double_elimination") => {
+    setFormat(newFormat);
+    if (newFormat === "double_elimination") {
+      setBracket(generateDoubleEliminationBracket(initialEventName, initialSport, SAMPLE_TEAMS_8));
+    } else {
+      setBracket(generateSingleEliminationBracket(initialEventName, initialSport, SAMPLE_TEAMS_8));
+    }
+  };
 
   const openScoreModal = (match: Match) => {
     if (!canManageScores || !match.teamA || !match.teamB) return;
@@ -109,32 +120,56 @@ export function TournamentBracketManager({
                 color: "var(--primary)",
               }}
             >
-              {bracket.sport} · 8-Team Bracket
+              {bracket.sport} · {format === "double_elimination" ? "Double Elimination" : "Single Elimination"}
             </span>
           </div>
           <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>
-            Single Elimination Tournament Engine · Registered Teams: {bracket.teams.length}
+            {format === "double_elimination"
+              ? "Winners & Losers Consolidation Engine · Teams: 8 · Guaranteed 2+ Games"
+              : `Single Elimination Tournament Engine · Registered Teams: ${bracket.teams.length}`}
           </div>
         </div>
 
-        {/* View Switcher */}
-        <div style={{ display: "flex", gap: 6 }}>
-          <button
-            type="button"
-            className={`btn small ${activeTab === "bracket" ? "" : "ghost"}`}
-            onClick={() => setActiveTab("bracket")}
-          >
-            Bracket Tree
-          </button>
-          <button
-            type="button"
-            className={`btn small ${activeTab === "schedule" ? "" : "ghost"}`}
-            onClick={() => setActiveTab("schedule")}
-          >
-            Court Schedule
-          </button>
+        {/* Format & View Switcher */}
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <div style={{ display: "flex", gap: 4, background: "var(--panel-2)", padding: 3, borderRadius: 6, border: "1px solid var(--line)" }}>
+            <button
+              type="button"
+              className={`btn small ${format === "single_elimination" ? "" : "ghost"}`}
+              onClick={() => handleFormatChange("single_elimination")}
+              style={{ fontSize: 11, padding: "3px 8px" }}
+            >
+              Single Elim
+            </button>
+            <button
+              type="button"
+              className={`btn small ${format === "double_elimination" ? "" : "ghost"}`}
+              onClick={() => handleFormatChange("double_elimination")}
+              style={{ fontSize: 11, padding: "3px 8px" }}
+            >
+              Double Elim
+            </button>
+          </div>
+
+          <div style={{ display: "flex", gap: 6 }}>
+            <button
+              type="button"
+              className={`btn small ${activeTab === "bracket" ? "" : "ghost"}`}
+              onClick={() => setActiveTab("bracket")}
+            >
+              Bracket Tree
+            </button>
+            <button
+              type="button"
+              className={`btn small ${activeTab === "schedule" ? "" : "ghost"}`}
+              onClick={() => setActiveTab("schedule")}
+            >
+              Court Schedule
+            </button>
+          </div>
         </div>
       </div>
+
 
       {/* Bracket Tree View */}
       {activeTab === "bracket" && (
