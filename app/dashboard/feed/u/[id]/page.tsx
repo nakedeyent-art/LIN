@@ -9,6 +9,7 @@ import { Badge, Card } from "@/components/ui";
 import { ROLES } from "@/lib/roles";
 import { initial } from "@/lib/social";
 import { MAX_LABEL, MAX_STATUS } from "@/lib/social";
+import { db } from "@/lib/db";
 import { blockUser, followUser, saveStatus, unfollowUser } from "../../actions";
 
 export const metadata: Metadata = { title: "Profile" };
@@ -23,11 +24,21 @@ export default async function ProfilePage({ params, searchParams }: { params: Pr
   const canSee = family || !u.minor || u.follower;
   const name = authorLabel(u.full_name, u.minor, family);
   const before = Number(q.before);
-  const [status, feed] = await Promise.all([
+  const [status, feed, metrics] = await Promise.all([
     canSee && !u.blocked ? statusOf(u.id) : Promise.resolve(null),
     canSee && !u.blocked ? postsBy(s.userId, u.id, Number.isSafeInteger(before) && before > 0 ? before : undefined) : Promise.resolve({ posts: [], more: false }),
+    u.role === "athlete" && canSee && !u.blocked
+      ? db().query(
+          `SELECT label, value, source, recorded_on, verified_by IS NOT NULL AS verified
+             FROM athlete_metrics
+            WHERE athlete_id = $1 AND (recruiting_visible OR $2)
+            ORDER BY recorded_on DESC LIMIT 8`,
+          [u.id, family]
+        ).then(res => res.rows)
+      : Promise.resolve([]),
   ]);
   const mine = u.self ? await statusOf(s.userId) : null;
+  const canMakeDeal = !u.self && u.role === "athlete" && ["sponsor", "booster", "gym_owner"].includes(s.role);
   return (
     <div style={{ maxWidth: 620 }}>
       <div className="tag"><Link href="/dashboard/feed">← Feed</Link></div>
@@ -42,6 +53,18 @@ export default async function ProfilePage({ params, searchParams }: { params: Pr
             {status?.status_text && <div>&ldquo;{status.status_text}&rdquo;</div>}
           </div>
         </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
+          {canMakeDeal && (
+            <Link href={`/dashboard/deals/new?athlete=${u.id}`} className="btn small" style={{ textDecoration: "none" }}>
+              Make NIL Offer →
+            </Link>
+          )}
+          {s.role === "recruiter" && u.role === "athlete" && (
+            <Link href={`/dashboard/scouting/${u.id}`} className="btn ghost small" style={{ textDecoration: "none" }}>
+              Recruiting Evaluation →
+            </Link>
+          )}
+        </div>
         {!u.self && !u.blocked && !u.guardian && (
           <div style={{ marginTop: 10 }}>
             {u.follow_status === "approved" ? <form action={unfollowUser}><input type="hidden" name="user_id" value={u.id} /><button className="btn ghost" type="submit">Following ✓ (unfollow)</button></form>
@@ -55,6 +78,22 @@ export default async function ProfilePage({ params, searchParams }: { params: Pr
             <button className="btn ghost" type="submit">{u.i_blocked ? "Unblock" : "Block"}</button>
           </form>)}
       </Card>
+      {metrics.length > 0 && (
+        <Card title="Verified Athletic Measurables" wide>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10 }}>
+            {metrics.map((m: any, idx: number) => (
+              <div key={idx} style={{ background: "var(--panel-2)", border: "1px solid var(--line)", borderRadius: 6, padding: "8px 10px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span className="muted" style={{ fontSize: 11, textTransform: "uppercase", fontWeight: 700 }}>{m.label}</span>
+                  {m.verified && <Badge tone="green">Verified</Badge>}
+                </div>
+                <div style={{ fontSize: 18, fontWeight: 800, fontFamily: "var(--mono)", color: "var(--primary)", margin: "2px 0" }}>{m.value}</div>
+                <span className="muted" style={{ fontSize: 11 }}>{m.source}</span>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
       {status?.music && <Card title="Now playing" wide><MusicCard music={status.music} label={status.label} /></Card>}
       {u.self && (
         <Card title="My status & music" wide>
