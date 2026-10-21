@@ -2,7 +2,8 @@ import { requireUser } from "@/lib/session";
 import { ROLES } from "@/lib/roles";
 import { RoleDashboard } from "@/components/dashboards";
 import { guardianState, parentLinksOfAdult } from "@/lib/guardians";
-import { Card, Grid } from "@/components/ui";
+import { Card, FeedCard, FeedSection, Grid, PageHead } from "@/components/ui";
+import { needsYou } from "@/lib/needs-you";
 import { inviteMyGuardian, resendGuardianInvite } from "../guardian/actions";
 import Link from "next/link";
 import { db } from "@/lib/db";
@@ -23,10 +24,15 @@ export default async function DashboardHome({ searchParams }: { searchParams: Pr
   const deals = dealRoles.includes(s.role) ? await listDeals(s.userId) : null;
   const inviteMsg = q.invite?.startsWith("err:") ? q.invite.slice(4)
     : { sent: "Invite sent.", wait: "Please wait a minute before re-sending.", error: "Couldn't send the invite. Try again shortly." }[q.invite ?? ""];
+  const pending = await needsYou(s);
   return (
     <>
-      <h1>Welcome, {s.name}</h1>
-      <div className="tag">{cfg.tagline}</div>
+      <PageHead eyebrow={cfg.label} title={<>Welcome, {s.name}</>} tag={cfg.tagline} />
+      {pending.length > 0 && <section aria-labelledby="home-needs" className="feed" style={{ marginBottom: 22 }}>
+        <FeedSection needs id="home-needs">Needs you · {pending.length}</FeedSection>
+        {pending.slice(0, 3).map((i) => <FeedCard key={i.key} needs icon={i.kind === "signature" ? "✍" : "$"} title={i.title} detail={i.detail} href={i.href} cta={i.cta} />)}
+        {pending.length > 3 && <p><Link className="record-link" href="/dashboard/today">See all {pending.length} on Today →</Link></p>}
+      </section>}
       {justTurned18 && <p className="ok" role="status">You&apos;re 18 now, so you control your own information. Your parent/guardian no longer has access unless you choose to share — <Link href="/dashboard/team" style={{ textDecoration: "underline" }}>review on the Team page</Link>.</p>}
       {q.connected && <p className="ok">You're now on this athlete's team.</p>}
       {q.linked && <p className="ok">You&apos;re now linked as a parent/guardian.</p>}

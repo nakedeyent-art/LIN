@@ -12,7 +12,7 @@ import { describePayment, fundingBlocker } from "@/lib/payment-rules";
 import { livePaymentFor, payeeInfo, reconcilePayment } from "@/lib/payments";
 import { paymentsEnabled } from "@/lib/stripe";
 import { formatBps } from "@/lib/money";
-import { Badge, Card as OriginalCard, Disclaimer, Grid, List } from "@/components/ui";
+import { Badge, Card as OriginalCard, Disclaimer, Grid, List, RecordSheet, Steps } from "@/components/ui";
 import { athleteLabel, StatusBadge } from "@/components/deal-ui";
 import { unreadByDeal } from "@/lib/messagesdb";
 import { dealAction } from "../actions";
@@ -69,9 +69,18 @@ export default async function DealDetail({ params, searchParams }: {
   ];
 
   return (
-    <>
-      <h1>{d.title} <StatusBadge d={d} /></h1>
-      <div className="tag">{formatCents(d.amount_cents)} · {d.counterparty_name} → {athleteLabel(d, s.userId, who === "guardian")}</div>
+    <RecordSheet>
+      <header className="record-header">
+        <div>
+          <p className="eyebrow">Deal record</p>
+          <h1>{d.title} <StatusBadge d={d} /></h1>
+          <div className="tag record-meta">
+            <span>Amount: <strong>{formatCents(d.amount_cents)}</strong></span>
+            <span>Counterparty: <strong>{d.counterparty_name}</strong></span>
+            <span>Athlete: <strong>{athleteLabel(d, s.userId, who === "guardian")}</strong></span>
+          </div>
+        </div>
+      </header>
       {msg && <p className="ok">{msg}</p>}
       {paid === "1" && pay && pay.status !== "pending_checkout" && !msg && <p className="ok">Thanks — your payment was received.</p>}
       {paid === "1" && pay?.status === "pending_checkout" && <p className="ok">Your payment is processing. This page updates automatically when it lands.</p>}
@@ -80,7 +89,7 @@ export default async function DealDetail({ params, searchParams }: {
       {tab==='parties'&&<section className="work-panel"><h2>Parties and permissions</h2><table><tbody><tr><td>Athlete</td><td>{athleteLabel(d,s.userId,who==='guardian')}</td></tr><tr><td>Counterparty</td><td>{d.counterparty_name}</td></tr><tr><td>Your role</td><td>{who}</td></tr></tbody></table><p className="muted">The parties and current guardians can access this record. Team relationships alone do not grant deal access.</p></section>}
       {tab==='compliance'&&<section className="work-panel"><h2>Compliance checks</h2><p>{d.attested_at?'NIL compensation attestation recorded.':'Compensation attestation pending.'}</p><p>{d.athlete_minor?'Guardian approval is required for this athlete.':'Athlete is an adult.'}</p><p>{k?.executedAt?'Agreement executed.':'Agreement signatures outstanding.'}</p><Link className="record-link" href="/dashboard/compliance">Review compliance guidance →</Link></section>}
       <Grid>
-        <Card title="Progress" wide><List items={steps.map(([ok, label]) => <>{ok ? "✅" : "⬜"} {label}</>)} /></Card>
+        <Card title="Progress" wide><Steps steps={steps} /></Card>
         <Card title="Deliverables" wide>
           <h4>Operational checklist</h4><p className="muted">Checklist items coordinate delivery and do not amend the signed agreement. Approving proof does not release payment.</p>
           <table><thead><tr><th>Item</th><th>Due</th><th>Status / proof</th><th>Action</th></tr></thead><tbody>{workItems.map(item=><tr key={item.id}><td>{item.title}</td><td>{new Date(item.due_on).toISOString().slice(0,10)}</td><td>{item.status.replaceAll('_',' ')}{item.attachment_id&&proofOptions.some(a=>a.id===item.attachment_id)&&<p><a className="record-link" href={`/dashboard/deals/${id}/attachments/${item.attachment_id}`}>{item.filename}</a></p>}</td><td>{who==='counterparty'&&item.status==='submitted'?<form action={saveDealWork}><input type="hidden" name="deal_id" value={id}/><input type="hidden" name="item_id" value={item.id}/><button className="btn ghost" name="action" value="accepted">Accept proof</button><button className="btn ghost" name="action" value="changes_requested">Request changes</button></form>:who!=='counterparty'&&item.status!=='accepted'?<form action={saveDealWork}><input type="hidden" name="deal_id" value={id}/><input type="hidden" name="item_id" value={item.id}/><input type="hidden" name="action" value="submit"/><label>Proof attachment<select name="attachment_id" required><option value="">Select message attachment</option>{proofOptions.map(a=><option key={a.id} value={a.id}>{a.filename}</option>)}</select></label><button className="btn ghost">Submit proof</button></form>:null}</td></tr>)}</tbody></table>
@@ -147,6 +156,6 @@ export default async function DealDetail({ params, searchParams }: {
         </Card>
       </Grid>
       <Disclaimer>This record logs platform decisions and e-signatures; the agreement is a template, not legal advice. Funds are held by Stripe and released when the sponsor marks the deal complete.</Disclaimer>
-    </>
+    </RecordSheet>
   );
 }

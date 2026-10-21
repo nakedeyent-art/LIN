@@ -6,6 +6,7 @@ import { Badge, Card, Disclaimer, Grid, Stat } from "@/components/ui";
 import { avgGrade, courseTrends, todayStr, weeklyStudy, addDays } from "@/lib/academics";
 import { ACADEMIC_GATE_MIN_STUDY_MINUTES, eligibilityGate, gradeAlerts } from "@/lib/calc";
 import { addGrade, deleteGrade, deleteStudy, logStudy, verifyStudy } from "./actions";
+import { StudyTimer } from "@/components/study-timer";
 
 export default async function Academics({ searchParams }: { searchParams: Promise<{ athlete?: string; msg?: string; error?: string }> }) {
   const s = await requireAccess("/dashboard/academics");
@@ -62,6 +63,11 @@ export default async function Academics({ searchParams }: { searchParams: Promis
                   {me && !x.verified_at && <form action={deleteStudy}><input type="hidden" name="id" value={x.id} /><button className="btn ghost" type="submit">Remove</button></form>}</td></tr>)}
             </tbody></table>)}
         </Card>
+        {me && (
+          <Card title="Live Focus &amp; Pomodoro Engine" wide>
+            <StudyTimer courses={courses.map((c) => c.name)} logAction={logStudy} />
+          </Card>
+        )}
         {me && <>
           <Card title="Add / update a grade">
             <form action={addGrade} style={{ display: "grid", gap: 8 }}>

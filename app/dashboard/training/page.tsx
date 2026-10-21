@@ -7,6 +7,7 @@ import { addDays, todayStr } from "@/lib/academics";
 import { allowedPhases, missedSessionAlert } from "@/lib/calc";
 import { adherenceStats, canPrescribe, effectiveStatus, type Exercise, lastWeekStatuses, PHASE_LABEL, PHASE_ORDER } from "@/lib/training";
 import { completeWorkout, createWorkout, deleteWorkout, setSeason } from "./actions";
+import { WorkoutPlayer } from "@/components/workout-player";
 
 const sel = { padding: 8, borderRadius: 8, border: "1px solid var(--line)", background: "var(--panel)", color: "var(--text)" } as const;
 
@@ -34,19 +35,32 @@ export default async function Training({ searchParams }: { searchParams: Promise
   const WorkoutCard = ({ r }: { r: (typeof rows)[number] }) => {
     const ex: Exercise[] = r.workout_json.exercises, st = effectiveStatus(r.status, r.day, today);
     const completable = own && r.day === today && st !== "completed" && st !== "missed";
+
+    if (completable) {
+      return (
+        <Card title={`Guided Session · ${r.day} · ${r.title}`} wide>
+          <WorkoutPlayer
+            workoutId={r.id}
+            workoutTitle={r.title}
+            focusArea={r.focus_area}
+            exercises={ex}
+            completeAction={completeWorkout}
+          />
+        </Card>
+      );
+    }
+
     return (
       <Card title={`${r.day} · ${r.title}`} wide>
         <p>{r.focus_area && <>Focus: {r.focus_area} · </>}<Badge tone={st === "completed" ? "green" : st === "missed" ? "red" : "gray"}>{st}{st === "completed" && r.adherence != null ? ` ${r.adherence}%` : ""}</Badge> <span className="muted">by {r.by ?? "—"}</span></p>
-        <form action={completable ? completeWorkout : undefined}>
-          <input type="hidden" name="id" value={r.id} />
+        <div>
           {PHASE_ORDER.filter((p) => ex.some((e) => e.phase === p)).map((p) => (
             <div key={p}><strong>{PHASE_LABEL[p]}</strong>
               <ul className="list">{ex.map((e, i) => e.phase !== p ? null : (
-                <li key={i}>{completable && <input type="checkbox" name={`done_${i}`} />} {e.name} — {e.sets} × {e.reps}{e.intensity ? ` @ ${e.intensity}` : ""}{e.tempo ? ` · tempo ${e.tempo}` : ""}{e.restSec != null ? ` · rest ${e.restSec}s` : ""}
+                <li key={i}>{e.name} — {e.sets} × {e.reps}{e.intensity ? ` @ ${e.intensity}` : ""}{e.tempo ? ` · tempo ${e.tempo}` : ""}{e.restSec != null ? ` · rest ${e.restSec}s` : ""}
                   {e.cue && <div className="muted">&ldquo;{e.cue}&rdquo;</div>}</li>))}</ul></div>))}
-          {completable && <><input type="text" name="notes" placeholder="Notes (weights used, how it felt)" maxLength={500} style={{ marginBottom: 8 }} /><button className="btn" type="submit">Complete workout</button></>}
           {r.athlete_notes && <p className="muted">Athlete notes: {r.athlete_notes}</p>}
-        </form>
+        </div>
         {r.prescribed_by === s.userId && r.status === "assigned" && r.day >= today &&
           <form action={deleteWorkout} style={{ marginTop: 8 }}><input type="hidden" name="id" value={r.id} /><button className="btn ghost" type="submit">Remove workout</button></form>}
       </Card>);

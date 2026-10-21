@@ -7,6 +7,7 @@ import { addDays, todayStr } from "@/lib/academics";
 import { ACTIVITY_LEVELS, complianceRate, PROFILE_LABEL, PROFILES } from "@/lib/nutrition";
 import { canPrescribe } from "@/lib/training";
 import { deleteMeal, logMeal, saveMetrics, setPlan } from "./actions";
+import { NutritionSuite } from "@/components/nutrition-suite";
 
 const sel = { padding: 10, borderRadius: 8, border: "1px solid var(--line)", background: "var(--panel)", color: "var(--text)" } as const;
 
@@ -81,6 +82,18 @@ export default async function Nutrition({ searchParams }: { searchParams: Promis
                 <td>{own && <form action={deleteMeal}><input type="hidden" name="id" value={m.id} /><button className="btn ghost" type="submit">Remove</button></form>}</td></tr>)}
             </tbody></table>)}
         </Card>
+        {own && plan && (
+          <Card title="Interactive Fueling &amp; Roadmap Suite" wide>
+            <NutritionSuite
+              targetCalories={plan.target_calories}
+              targetProtein={plan.protein_grams}
+              targetCarbs={plan.carbs_grams}
+              targetFats={plan.fats_grams}
+              athleteWeightKg={prof?.w ?? 75}
+              logMealAction={logMeal}
+            />
+          </Card>
+        )}
         {own && (
           <Card title="Log a meal" wide>
             <form action={logMeal} style={{ display: "grid", gap: 8, maxWidth: 480 }}>
