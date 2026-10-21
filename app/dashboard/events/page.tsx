@@ -2,17 +2,27 @@ import { requireAccess } from "@/lib/session";
 import { db } from "@/lib/db";
 import { Badge, Card, Disclaimer, Grid } from "@/components/ui";
 import { EVENT_STATUSES } from "@/lib/events";
+import { TournamentBracketManager } from "@/components/tournament-bracket";
 import { createEvent, setEventStatus } from "./actions";
 
 export default async function Events({ searchParams }: { searchParams: Promise<{ msg?: string; error?: string }> }) {
   const s = await requireAccess("/dashboard/events");
   const q = await searchParams;
   const events = (await db().query("SELECT id, name, sport, location, starts_on::text AS day, status FROM events WHERE organizer_id=$1 ORDER BY starts_on DESC", [s.userId])).rows;
+  const primaryEvent = events[0];
+
   return (
     <>
-      <h1>My Events</h1>
-      <div className="tag">Create and manage your tournaments and showcases.</div>
+      <h1>Events & Tournaments</h1>
+      <div className="tag">Create and manage your tournaments, brackets, and court schedules.</div>
       {q.msg && <p className="ok">{q.msg}</p>}{q.error && <p role="alert" className="error">{q.error}</p>}
+
+      <TournamentBracketManager
+        initialEventName={primaryEvent?.name ?? "Midwest Summer Invitational"}
+        initialSport={primaryEvent?.sport ?? "Basketball"}
+        userRole={s.role}
+      />
+
       <Grid>
         <Card title="Events" wide>
           {events.length === 0 ? <p className="muted">No events yet.</p> : (
@@ -31,7 +41,8 @@ export default async function Events({ searchParams }: { searchParams: Promise<{
             <button className="btn" type="submit">Create draft</button></form>
         </Card>
       </Grid>
-      <Disclaimer>Team registration, brackets and sponsor placement aren&apos;t built yet — this page manages your event listings.</Disclaimer>
+      <Disclaimer>Tournament bracket management and live court scheduling are active. Authorized organizers and coaches can click any matchup to record live scores and advance teams to the championship round.</Disclaimer>
     </>
   );
 }
+
