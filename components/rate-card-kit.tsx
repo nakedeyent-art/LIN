@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { calculateDeliverablesPricing, generateMediaKitText } from "@/lib/nil-valuation";
 
 export function RateCardKit({ athleteName, sport, position, level }: { athleteName?: string; sport?: string; position?: string; level?: string }) {
   const [igFollowers, setIgFollowers] = useState<number>(8500);
@@ -9,51 +10,28 @@ export function RateCardKit({ athleteName, sport, position, level }: { athleteNa
   const [engagementRate, setEngagementRate] = useState<number>(4.8); // 4.8%
   const [copied, setCopied] = useState<boolean>(false);
 
-  const totalReach = igFollowers + tiktokFollowers + xFollowers;
-
-  // NIL standard pricing algorithm:
-  // Base CPM model adjusted for engagement rate:
-  // Active athletic creators command ~$25 - $40 CPM per 1,000 followers, scaled by engagement factor
-  const engagementFactor = Math.max(0.7, engagementRate / 4.0);
-
-  // Deliverable pricing estimates
-  const reelPrice = Math.max(150, Math.round((totalReach * 0.035 * engagementFactor) / 25) * 25);
-  const staticPostPrice = Math.max(100, Math.round((igFollowers * 0.025 * engagementFactor) / 25) * 25);
-  const storySeriesPrice = Math.max(75, Math.round((igFollowers * 0.015 * engagementFactor) / 25) * 25);
-  const appearancePrice = Math.max(300, Math.round((250 + totalReach * 0.02) / 50) * 50);
-  const monthlyRetainerPrice = Math.max(500, Math.round((reelPrice * 2 + storySeriesPrice * 3 + 200) / 100) * 100);
+  const reach = { igFollowers, tiktokFollowers, xFollowers, engagementRate };
+  const pricing = calculateDeliverablesPricing(reach);
+  const { totalReach, reelPrice, staticPostPrice, storySeriesPrice, appearancePrice, monthlyRetainerPrice } = pricing;
 
   const fmt = (n: number) =>
     new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(n);
 
   const copyMediaKit = () => {
-    const text = `
-NIL BRAND RATE CARD & MEDIA KIT
-Athlete: ${athleteName ?? "Student-Athlete"}
-Sport / Position: ${sport ?? "Multi-Sport"} ${position ? `· ${position}` : ""}
-Level: ${level ? level.replace(/_/g, " ") : "Varsity"}
-
-AUDIENCE REACH
-- Total Social Reach: ${totalReach.toLocaleString()} followers
-- Instagram: ${igFollowers.toLocaleString()}
-- TikTok: ${tiktokFollowers.toLocaleString()}
-- X / Twitter: ${xFollowers.toLocaleString()}
-- Avg Engagement Rate: ${engagementRate}% (Industry benchmark: 2.5%)
-
-STANDARD RATE CARD
-1. Dedicated TikTok / IG Reel: ${fmt(reelPrice)}
-2. Static Feed Post + Story Series: ${fmt(staticPostPrice)}
-3. In-Person Appearance / Clinic (2h): ${fmt(appearancePrice)}
-4. 3-Month Ambassador Retainer: ${fmt(monthlyRetainerPrice)}/mo
-
-Deliverables include usage rights, FTC disclosure compliance, and performance metrics proof.
-Inquiries: Contact athlete management via LIN NIL Ecosystem.
-    `.trim();
+    const text = generateMediaKitText({
+      athleteName,
+      sport,
+      position,
+      level,
+      reach,
+      pricing,
+    });
 
     navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2500);
   };
+
 
   return (
     <div

@@ -2,92 +2,13 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import {
+  DEFAULT_OPPORTUNITIES,
+  filterOpportunities,
+  type CampaignOpportunity,
+} from "@/lib/campaigns";
 
-export type CampaignOpportunity = {
-  id: string;
-  title: string;
-  sponsorName: string;
-  sponsorRole: "sponsor" | "booster" | "gym_owner";
-  category: "Social Media" | "Appearance" | "Ambassador" | "Product Testing" | "Clinic Lead";
-  sport: string;
-  level: "All Levels" | "College Only" | "High School & College";
-  compensation: string;
-  compensationCents: number;
-  deliverables: string;
-  deadlineDays: number;
-  featured?: boolean;
-};
-
-const DEFAULT_OPPORTUNITIES: CampaignOpportunity[] = [
-  {
-    id: "opp-1",
-    title: "Apex Hydration Match-Day Social Campaign",
-    sponsorName: "Apex Performance Hydration",
-    sponsorRole: "sponsor",
-    category: "Social Media",
-    sport: "All Sports",
-    level: "High School & College",
-    compensation: "$750",
-    compensationCents: 75000,
-    deliverables: "2 TikTok/Instagram Reels featuring match-day prep drink + 1 story link with discount code.",
-    deadlineDays: 14,
-    featured: true,
-  },
-  {
-    id: "opp-2",
-    title: "Metro Elite Youth Basketball Clinic Lead Coach",
-    sponsorName: "Metro Hoops Training Facility",
-    sponsorRole: "gym_owner",
-    category: "Clinic Lead",
-    sport: "Basketball",
-    level: "High School & College",
-    compensation: "$1,200",
-    compensationCents: 120000,
-    deliverables: "Co-host a 3-hour Saturday youth camp session, demonstrate shooting mechanics, photo session with attendees.",
-    deadlineDays: 8,
-    featured: true,
-  },
-  {
-    id: "opp-3",
-    title: "State Student-Athlete Collective Community Grant",
-    sponsorName: "Champions NIL Collective",
-    sponsorRole: "booster",
-    category: "Ambassador",
-    sport: "All Sports",
-    level: "College Only",
-    compensation: "$2,500",
-    compensationCents: 250000,
-    deliverables: "Quarterly community service attendance, 1 collective podcast appearance, and brand advocate tagging.",
-    deadlineDays: 21,
-    featured: true,
-  },
-  {
-    id: "opp-4",
-    title: "Velocity Grip Cleats Wear-Test & Review",
-    sponsorName: "Velocity Athletics Apparel",
-    sponsorRole: "sponsor",
-    category: "Product Testing",
-    sport: "Football",
-    level: "All Levels",
-    compensation: "$500 + Gear Pack",
-    compensationCents: 50000,
-    deliverables: "Wear test cleats during 3 speed training sessions, complete feedback survey, and post 1 unboxing video.",
-    deadlineDays: 10,
-  },
-  {
-    id: "opp-5",
-    title: "All-Star Sports Recovery Cryo Ambassador",
-    sponsorName: "Restore & Rebuild Wellness",
-    sponsorRole: "gym_owner",
-    category: "Ambassador",
-    sport: "All Sports",
-    level: "All Levels",
-    compensation: "$1,000 + Free Facility Pass",
-    compensationCents: 100000,
-    deliverables: "Monthly cryotherapy & recovery visit check-in, 1 Instagram carousel on athletic recovery routines.",
-    deadlineDays: 18,
-  },
-];
+export type { CampaignOpportunity };
 
 export function CampaignMarketplace({ viewerRole }: { viewerRole: string }) {
   const [selectedSport, setSelectedSport] = useState<string>("All");
@@ -99,11 +20,11 @@ export function CampaignMarketplace({ viewerRole }: { viewerRole: string }) {
   const sports = ["All", "Basketball", "Football", "Soccer", "All Sports"];
   const categories = ["All", "Social Media", "Appearance", "Ambassador", "Product Testing", "Clinic Lead"];
 
-  const filtered = DEFAULT_OPPORTUNITIES.filter((opp) => {
-    const matchesSport = selectedSport === "All" || opp.sport === selectedSport || opp.sport === "All Sports";
-    const matchesCategory = selectedCategory === "All" || opp.category === selectedCategory;
-    return matchesSport && matchesCategory;
+  const filtered = filterOpportunities(DEFAULT_OPPORTUNITIES, {
+    sport: selectedSport === "All" ? undefined : selectedSport,
+    category: selectedCategory === "All" ? undefined : selectedCategory,
   });
+
 
   const handleApply = (id: string) => {
     setAppliedIds((prev) => [...prev, id]);

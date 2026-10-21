@@ -1,25 +1,7 @@
 "use client";
 
 import { useState } from "react";
-
-type StateTaxRate = {
-  name: string;
-  code: string;
-  rate: number; // decimal e.g. 0.05
-};
-
-const STATE_RATES: StateTaxRate[] = [
-  { name: "Florida (No State Tax)", code: "FL", rate: 0.0 },
-  { name: "Texas (No State Tax)", code: "TX", rate: 0.0 },
-  { name: "Tennessee (No State Tax)", code: "TN", rate: 0.0 },
-  { name: "California", code: "CA", rate: 0.08 },
-  { name: "New York", code: "NY", rate: 0.065 },
-  { name: "Ohio", code: "OH", rate: 0.035 },
-  { name: "North Carolina", code: "NC", rate: 0.0475 },
-  { name: "Georgia", code: "GA", rate: 0.0549 },
-  { name: "Illinois", code: "IL", rate: 0.0495 },
-  { name: "Other States (Avg 5%)", code: "OTHER", rate: 0.05 },
-];
+import { STATE_RATES, calculateTaxBreakdown } from "@/lib/nil-valuation";
 
 export function TaxEstimator({ initialGross }: { initialGross?: number }) {
   const [grossInput, setGrossInput] = useState<string>(initialGross ? String(initialGross) : "10000");
@@ -29,23 +11,18 @@ export function TaxEstimator({ initialGross }: { initialGross?: number }) {
   const gross = Math.max(0, parseFloat(grossInput) || 0);
   const selectedState = STATE_RATES.find((s) => s.code === selectedStateCode) ?? STATE_RATES[0];
 
-  // Calculations
-  const agentFee = gross * (agencyFeePct / 100);
-  const netBeforeTax = gross - agentFee;
+  const {
+    agentFee,
+    netBeforeTax,
+    seTax,
+    fedTax,
+    stateTax,
+    totalTaxes,
+    netTakeHome,
+    recommendedReservePct,
+    quarterlyEstimatedTax,
+  } = calculateTaxBreakdown(gross, selectedStateCode, agencyFeePct);
 
-  // Self-Employment Tax: 15.3% on 92.35% of net business earnings
-  const seTaxable = netBeforeTax * 0.9235;
-  const seTax = seTaxable * 0.153;
-
-  // Estimated Federal Income Tax (conservative standard effective rate of ~12% for typical NIL bracket)
-  const fedTax = Math.max(0, (netBeforeTax - seTax * 0.5 - 14600) * 0.12);
-
-  // State Tax
-  const stateTax = netBeforeTax * selectedState.rate;
-
-  const totalTaxes = seTax + fedTax + stateTax;
-  const netTakeHome = netBeforeTax - totalTaxes;
-  const recommendedReservePct = gross > 0 ? Math.round((totalTaxes / gross) * 100) : 30;
 
   const fmt = (n: number) =>
     new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(n);

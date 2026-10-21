@@ -1,15 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { calculateReadinessScore, getReadinessStatus, type ReadinessLog } from "@/lib/readiness";
 
-export type ReadinessLog = {
-  sleepHours: number;
-  sleepQuality: number; // 1-5
-  muscleSoreness: number; // 1-5 (1=fresh, 5=very sore)
-  mentalStress: number; // 1-5 (1=calm, 5=high stress)
-  motivation: number; // 1-5
-  notes?: string;
-};
+export type { ReadinessLog };
 
 export function WellnessCheckin({ athleteName }: { athleteName?: string }) {
   const [sleepHours, setSleepHours] = useState<number>(8);
@@ -21,22 +15,16 @@ export function WellnessCheckin({ athleteName }: { athleteName?: string }) {
   const [submitted, setSubmitted] = useState<boolean>(false);
   const [isExpanded, setIsExpanded] = useState<boolean>(false);
 
-  // Readiness algorithm: 0 - 100%
-  // Optimal: 8+ hrs sleep (25 pts), quality 5 (20 pts), low soreness (20 pts), low stress (20 pts), high motivation (15 pts)
-  const sleepPts = Math.min(25, (sleepHours / 8) * 25);
-  const qualityPts = (sleepQuality / 5) * 20;
-  const sorenessPts = ((6 - soreness) / 5) * 20;
-  const stressPts = ((6 - mentalStress) / 5) * 20;
-  const motivationPts = (motivation / 5) * 15;
-  const readinessScore = Math.round(sleepPts + qualityPts + sorenessPts + stressPts + motivationPts);
+  const readinessScore = calculateReadinessScore({
+    sleepHours,
+    sleepQuality,
+    muscleSoreness: soreness,
+    mentalStress,
+    motivation,
+  });
 
-  const getStatus = (score: number) => {
-    if (score >= 80) return { label: "Optimal / Game Ready", color: "var(--ok)", tone: "green", advice: "Prime physiological and mental state. Full training intensity authorized." };
-    if (score >= 60) return { label: "Moderate / Normal", color: "#2563eb", tone: "blue", advice: "Adequate readiness. Maintain standard workout volume and ensure post-training hydration." };
-    return { label: "Fatigued / High Stress", color: "var(--needs)", tone: "yellow", advice: "Intervention recommended: consider active recovery, mobility, and reducing high-impact load." };
-  };
+  const status = getReadinessStatus(readinessScore);
 
-  const status = getStatus(readinessScore);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
