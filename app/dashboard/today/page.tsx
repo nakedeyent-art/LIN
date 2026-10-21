@@ -3,6 +3,7 @@ import { subjectsFor, canEditFamily } from '@/lib/access';
 import { db } from '@/lib/db';
 import { needsYou } from '@/lib/needs-you';
 import { FeedCard, FeedEmpty, FeedSection, PageHead } from '@/components/ui';
+import { WellnessCheckin } from '@/components/wellness-checkin';
 
 /** Venue wall-clock time: events are scheduled in the venue's zone (see sports_event_details.timezone). */
 const venueTime = (at: Date, tz: string | null) => {
@@ -28,6 +29,7 @@ export default async function Today() {
   const who = (id: string) => athletes.length > 1 ? ` · ${names.get(id) ?? ''}` : '';
   return <>
     <PageHead eyebrow={new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'UTC' }).format(new Date()) + ' · UTC'} title="Today" tag="Decisions waiting on you first, then games, tasks and conversations." />
+    {['athlete', 'manager', 'trainer'].includes(s.role) && <WellnessCheckin athleteName={athletes[0]?.name ?? s.name} />}
     <div className="feed">
       <FeedSection needs={pending.length > 0} id="needs-you">Needs you{pending.length ? ` · ${pending.length}` : ''}</FeedSection>
       {pending.length

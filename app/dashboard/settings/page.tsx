@@ -14,6 +14,7 @@ import { listPasskeys } from "@/lib/passkeys";
 import {
   cancelEmailChange, changePassword, deleteAccount, requestEmailChange, signOutOthers, updateEmailPrefs, updateProfile,
 } from "./actions";
+import { RateCardKit } from "@/components/rate-card-kit";
 
 const stack = { display: "grid", gap: 8, maxWidth: 420 } as const;
 const fmt = (d: Date) => new Date(d).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
@@ -40,6 +41,7 @@ export default async function Settings({ searchParams }: { searchParams: Promise
       <div className="tag">{s.email} · {ROLES[s.role].label}</div>
       {q.msg && <p className="ok">{q.msg}</p>}
       {q.error && <p role="alert" className="error">{q.error}</p>}
+      {(s.role === "athlete" || a) && <RateCardKit athleteName={s.name} sport={a?.sport} position={a?.position} level={a?.level} />}
       <Grid>
         <Card title="Profile">
           <form action={updateProfile} style={stack}>
