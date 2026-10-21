@@ -9,6 +9,7 @@ import { startPayouts } from "./payment-actions";
 import { DealTable } from "@/components/deal-ui";
 import { unreadByDeal } from "@/lib/messagesdb";
 import { setDiscoverable } from "./actions";
+import { CampaignMarketplace } from "@/components/campaign-marketplace";
 
 export default async function DealsPage({ searchParams }: { searchParams: Promise<{ error?: string; msg?: string }> }) {
   const s = await requireAccess("/dashboard/deals");
@@ -27,11 +28,12 @@ export default async function DealsPage({ searchParams }: { searchParams: Promis
     (d.status === "awaiting_signature" && !d.signed_by_me && !(s.role === "athlete" && d.athlete_minor))).length;
   return (
     <>
-      <h1>Deals</h1>
+      <h1>Deals & Marketplace</h1>
       <div className="tag">{s.role === "parent" ? "Approve or reject your athlete's deals." : s.role === "athlete" ? "Review offers. Under 18? A guardian must approve before a deal is active." : "Your offers and active deals."}</div>
       {msg && <p className="ok">{msg}</p>}
       {error && <p role="alert" className="error">{error}</p>}
       {needs > 0 && <p className="ok">{needs} deal{needs > 1 ? "s" : ""} waiting for your decision or signature.</p>}
+      <CampaignMarketplace viewerRole={s.role} />
       <Grid>
         {canPaid && (
           <Card title="Payouts" wide>
