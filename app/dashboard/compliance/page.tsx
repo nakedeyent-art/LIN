@@ -1,6 +1,7 @@
 import { requireAccess } from "@/lib/session";
 import { Card, Disclaimer, Grid, List } from "@/components/ui";
 import { TaxEstimator } from "@/components/tax-estimator";
+import { CollectiveAuditSuite } from "@/components/collective-audit";
 
 export default async function Compliance() {
   await requireAccess("/dashboard/compliance");
@@ -8,7 +9,9 @@ export default async function Compliance() {
     <>
       <h1>Compliance & Financial Guardrails</h1>
       <div className="tag">Rules built into the product, not bolted on.</div>
+      <CollectiveAuditSuite />
       <TaxEstimator />
+
       <Grid>
         <Card title="Agent & SPARTA">
           <p>Managers must declare a role: Marketing Agent, Certified Strength Coach, or Mentor. Agency agreements disclose all representation terms.</p>
