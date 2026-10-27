@@ -127,3 +127,4 @@ export function checkChaperoneCompliance(chaperones: Chaperone[]): {
     unassignedAthletesAlert: chaperones.some((c) => c.assignedAthletes.length === 0),
   };
 }
+

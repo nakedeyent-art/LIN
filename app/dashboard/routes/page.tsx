@@ -3,6 +3,7 @@ import { requireUser } from '@/lib/session';
 import { subjectsFor, canEditFamily } from '@/lib/access';
 import { db } from '@/lib/db';
 import { TravelLogisticsHub } from '@/components/travel-logistics-hub';
+import { loadRealTravelLogistics } from '@/lib/travel-logistics-server';
 import { createRoute } from './actions';
 
 export default async function Routes({ searchParams }: { searchParams: Promise<{ athlete?: string; error?: string }> }) {
@@ -11,6 +12,7 @@ export default async function Routes({ searchParams }: { searchParams: Promise<{
   const athletes = (await subjectsFor(s)).filter(canEditFamily);
   const a = athletes.find(a => a.id === p.athlete) ?? athletes[0];
   const rows = a ? (await db().query('SELECT * FROM travel_routes WHERE athlete_id=$1 ORDER BY created_at DESC', [a.id])).rows : [];
+  const primaryTrip = rows[0] ? await loadRealTravelLogistics(rows[0].id) : null;
 
   return (
     <>
@@ -20,7 +22,11 @@ export default async function Routes({ searchParams }: { searchParams: Promise<{
       {p.error && <p className="error">{p.error}</p>}
 
       {/* Team & Athlete Travel Logistics Hub */}
-      <TravelLogisticsHub />
+      <TravelLogisticsHub
+        initialTrip={primaryTrip}
+        tripName={rows[0]?.name || "Team & Athlete Travel Logistics"}
+        destination={primaryTrip?.destination || (a ? `${a.name}'s Route` : undefined)}
+      />
 
       <form className="filter-bar">
         <label>

@@ -104,23 +104,27 @@ const SAMPLE_REELS: HighlightReel[] = [
 ];
 
 export function VideoVault({
-  athleteName = "Marcus Johnson",
+  initialReels,
+  athleteName = "Prospect Film",
   sport = "Basketball",
   userRole = "recruiter",
 }: {
+  initialReels?: HighlightReel[];
   athleteName?: string;
   sport?: string;
   userRole?: string;
 }) {
-  const [reels] = useState<HighlightReel[]>(SAMPLE_REELS);
-  const [selectedReelId, setSelectedReelId] = useState<string>(SAMPLE_REELS[0].id);
+  const hasLive = Boolean(initialReels && initialReels.length > 0);
+  const [mode, setMode] = useState<"live" | "demo">(hasLive ? "live" : "live");
+  const reels = mode === "demo" ? SAMPLE_REELS : initialReels ?? [];
+  const [selectedReelId, setSelectedReelId] = useState<string>(reels[0]?.id ?? "");
   const [selectedSkill, setSelectedSkill] = useState<string>("All Skills");
-  const [activeClipId, setActiveClipId] = useState<string>(SAMPLE_REELS[0].clips[0].id);
+  const [activeClipId, setActiveClipId] = useState<string>(reels[0]?.clips[0]?.id ?? "");
   const [copiedLink, setCopiedLink] = useState<boolean>(false);
 
   const activeReel = reels.find((r) => r.id === selectedReelId) ?? reels[0];
-  const filteredClips = filterClipsBySkill(activeReel.clips, selectedSkill);
-  const activeClip = activeReel.clips.find((c) => c.id === activeClipId) ?? activeReel.clips[0];
+  const filteredClips = activeReel ? filterClipsBySkill(activeReel.clips, selectedSkill) : [];
+  const activeClip = activeReel ? (activeReel.clips.find((c) => c.id === activeClipId) ?? activeReel.clips[0]) : null;
 
   const skillOptions: SkillCategory[] = [
     "All Skills",
@@ -132,8 +136,9 @@ export function VideoVault({
   ];
 
   const handleCopyRecruiterLink = () => {
+    if (!activeReel) return;
     const token = generateRecruiterShareToken(activeReel.athleteId, activeReel.id, 30);
-    const link = `https://lin-nil.com/scouting/vault?prospect=${activeReel.athleteId}&token=${token}`;
+    const link = `https://lin-nil.com/scouting/vault?prospect=${activeReel.athleteId}&token=${token}${mode === "demo" ? "&demo=1" : ""}`;
     navigator.clipboard.writeText(link);
     setCopiedLink(true);
     setTimeout(() => setCopiedLink(false), 2500);
@@ -178,25 +183,84 @@ export function VideoVault({
                 border: "1px solid var(--line)",
               }}
             >
-              Verified Game Film
+              {sport} · {hasLive || mode === "demo" ? "Recruiter Reel Vault" : "No Film Uploaded"}
             </span>
           </div>
           <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>
-            Timestamped clip tagging, scouting evaluations, and verified recruiter share links for {athleteName}.
+            {mode === "demo"
+              ? "Sandbox Film Simulation · 2 Highlight Reels · Skill Breakdowns & Recruiter Share Links"
+              : hasLive
+              ? "Verified Prospect Film Reels from Database"
+              : "No highlight reels on your scouting board yet."}
           </div>
         </div>
 
-        <button
-          type="button"
-          onClick={handleCopyRecruiterLink}
-          className="btn small"
-        >
-          {copiedLink ? "✓ Link Copied to Clipboard!" : "🔗 Share Film with College Staff"}
-        </button>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <button
+            type="button"
+            className={`btn small ${mode === "demo" ? "" : "ghost"}`}
+            onClick={() => setMode((m) => (m === "live" ? "demo" : "live"))}
+            style={{ fontSize: 12 }}
+          >
+            {mode === "demo" ? "← Back to Live Scouting" : "Sandbox Film Simulation"}
+          </button>
+          {activeReel && (
+            <button
+              type="button"
+              className="btn small"
+              onClick={handleCopyRecruiterLink}
+            >
+              {copiedLink ? "✓ Link Copied!" : "🔗 Share Reel with Recruiter"}
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* Reel Selector */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 16, overflowX: "auto", paddingBottom: 4 }}>
+      {mode === "demo" && (
+        <div
+          style={{
+            background: "rgba(234, 179, 8, 0.12)",
+            border: "1px solid rgba(234, 179, 8, 0.3)",
+            borderRadius: 6,
+            padding: "8px 12px",
+            marginBottom: 16,
+            fontSize: 12,
+            color: "var(--text)",
+          }}
+        >
+          <strong>⚠️ Sandbox Simulation (Sample Film Data):</strong> Displaying sample game film and skill breakdowns for recruiter evaluation testing.
+        </div>
+      )}
+
+      {mode === "live" && !hasLive && (
+        <div
+          style={{
+            textAlign: "center",
+            padding: "36px 16px",
+            background: "var(--panel-2)",
+            borderRadius: 8,
+            border: "1px solid var(--line)",
+          }}
+        >
+          <span style={{ fontSize: 32 }}>📹</span>
+          <h3 style={{ margin: "10px 0 6px", fontSize: 16 }}>No Highlight Film Available</h3>
+          <p className="muted" style={{ margin: "0 0 16px", fontSize: 13 }}>
+            Add video attachments to prospect scouting evaluations to populate the recruiter highlight vault.
+          </p>
+          <button
+            type="button"
+            className="btn small ghost"
+            onClick={() => setMode("demo")}
+          >
+            Explore Sandbox Highlight Vault (Demo Film) →
+          </button>
+        </div>
+      )}
+
+      {!(mode === "live" && !hasLive) && activeReel && (
+        <>
+        {/* Reel Selector */}
+        <div style={{ display: "flex", gap: 8, marginBottom: 16, overflowX: "auto", paddingBottom: 4 }}>
         {reels.map((r) => {
           const isSelected = r.id === activeReel.id;
           return (
@@ -431,6 +495,8 @@ export function VideoVault({
           </div>
         </div>
       </div>
+      </>
+      )}
     </div>
   );
 }

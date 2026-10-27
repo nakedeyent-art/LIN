@@ -1,56 +1,86 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import {
-  generateSingleEliminationBracket,
-  generateDoubleEliminationBracket,
-  updateMatchScore,
   type TournamentBracket as BracketType,
   type Team,
   type Match,
 } from "@/lib/brackets";
+import {
+  createOrResetBracketAction,
+  recordScoreAction,
+  deleteBracketAction,
+} from "@/app/dashboard/events/actions";
 
-const SAMPLE_TEAMS_8: Team[] = [
-  { id: "tm-1", name: "Metro Hawks Elite", seed: 1, city: "Atlanta", record: "18-2" },
-  { id: "tm-2", name: "Bay Area Titans", seed: 2, city: "Oakland", record: "16-4" },
-  { id: "tm-3", name: "Windy City United", seed: 3, city: "Chicago", record: "15-5" },
-  { id: "tm-4", name: "Lone Star Rebels", seed: 4, city: "Dallas", record: "14-6" },
-  { id: "tm-5", name: "Philly Express", seed: 5, city: "Philadelphia", record: "13-7" },
-  { id: "tm-6", name: "Miami Surge", seed: 6, city: "Miami", record: "12-8" },
-  { id: "tm-7", name: "Seattle Cascade", seed: 7, city: "Seattle", record: "11-9" },
-  { id: "tm-8", name: "Denver Summit", seed: 8, city: "Denver", record: "10-10" },
+export type EventSummary = {
+  id: string;
+  name: string;
+  sport: string;
+  location?: string | null;
+  day: string;
+  status: string;
+};
+
+const DEFAULT_SEEDS_8: Array<{ seed: number; name: string; city: string }> = [
+  { seed: 1, name: "Metro Hawks Elite", city: "Atlanta" },
+  { seed: 2, name: "Bay Area Titans", city: "Oakland" },
+  { seed: 3, name: "Windy City United", city: "Chicago" },
+  { seed: 4, name: "Lone Star Rebels", city: "Dallas" },
+  { seed: 5, name: "Philly Express", city: "Philadelphia" },
+  { seed: 6, name: "Miami Surge", city: "Miami" },
+  { seed: 7, name: "Seattle Cascade", city: "Seattle" },
+  { seed: 8, name: "Denver Summit", city: "Denver" },
+];
+
+const DEFAULT_SEEDS_4: Array<{ seed: number; name: string; city: string }> = [
+  { seed: 1, name: "Metro Hawks Elite", city: "Atlanta" },
+  { seed: 2, name: "Bay Area Titans", city: "Oakland" },
+  { seed: 3, name: "Windy City United", city: "Chicago" },
+  { seed: 4, name: "Lone Star Rebels", city: "Dallas" },
 ];
 
 export function TournamentBracketManager({
-  initialEventName = "Midwest Summer Invitational",
-  initialSport = "Basketball",
+  event,
+  bracket,
   userRole,
+  allEvents = [],
 }: {
-  initialEventName?: string;
-  initialSport?: string;
+  event?: EventSummary | null;
+  bracket?: BracketType | null;
   userRole?: string;
+  allEvents?: EventSummary[];
 }) {
-  const [format, setFormat] = useState<"single_elimination" | "double_elimination">("single_elimination");
-  const [bracket, setBracket] = useState<BracketType>(() =>
-    generateSingleEliminationBracket(initialEventName, initialSport, SAMPLE_TEAMS_8)
-  );
   const [activeTab, setActiveTab] = useState<"bracket" | "schedule">("bracket");
   const [scoringMatch, setScoringMatch] = useState<Match | null>(null);
   const [scoreA, setScoreA] = useState<string>("");
   const [scoreB, setScoreB] = useState<string>("");
   const [isFinal, setIsFinal] = useState<boolean>(false);
 
+  // Bracket creation state (when no bracket exists)
+  const [createFormat, setCreateFormat] = useState<"single_elimination" | "double_elimination">("single_elimination");
+  const [teamCount, setTeamCount] = useState<4 | 8>(8);
+  const [setupTeams, setSetupTeams] = useState<Array<{ seed: number; name: string; city: string }>>(DEFAULT_SEEDS_8);
+
   const canManageScores = ["tournament_manager", "coach", "gym_owner", "manager", "admin"].includes(
     userRole ?? "tournament_manager"
   );
 
-  const handleFormatChange = (newFormat: "single_elimination" | "double_elimination") => {
-    setFormat(newFormat);
-    if (newFormat === "double_elimination") {
-      setBracket(generateDoubleEliminationBracket(initialEventName, initialSport, SAMPLE_TEAMS_8));
-    } else {
-      setBracket(generateSingleEliminationBracket(initialEventName, initialSport, SAMPLE_TEAMS_8));
-    }
+  const handleTeamCountChange = (count: 4 | 8) => {
+    setTeamCount(count);
+    setSetupTeams(count === 4 ? DEFAULT_SEEDS_4 : DEFAULT_SEEDS_8);
+  };
+
+  const handleTeamNameChange = (index: number, newName: string) => {
+    const updated = [...setupTeams];
+    updated[index].name = newName;
+    setSetupTeams(updated);
+  };
+
+  const handleTeamCityChange = (index: number, newCity: string) => {
+    const updated = [...setupTeams];
+    updated[index].city = newCity;
+    setSetupTeams(updated);
   };
 
   const openScoreModal = (match: Match) => {
@@ -61,23 +91,34 @@ export function TournamentBracketManager({
     setIsFinal(match.status === "final");
   };
 
-  const handleSaveScore = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!scoringMatch) return;
-
-    const sA = parseInt(scoreA, 10) || 0;
-    const sB = parseInt(scoreB, 10) || 0;
-
-    const updated = updateMatchScore(bracket, scoringMatch.id, sA, sB, isFinal);
-    setBracket(updated);
-    setScoringMatch(null);
-  };
+  if (!event) {
+    return (
+      <div
+        style={{
+          background: "var(--panel)",
+          border: "1px solid var(--line)",
+          borderRadius: "var(--r)",
+          padding: 24,
+          marginBottom: 24,
+          textAlign: "center",
+        }}
+      >
+        <span style={{ fontSize: 32 }}>🏆</span>
+        <h3 style={{ margin: "12px 0 6px" }}>No Tournament Selected</h3>
+        <p className="muted" style={{ margin: 0, fontSize: 13 }}>
+          Create an event using the form below to initialize a live tournament bracket and court schedule.
+        </p>
+      </div>
+    );
+  }
 
   // Extract all matches for court schedule
   const allMatches: Match[] = [];
-  for (const r of bracket.rounds) {
-    for (const m of r.matches) {
-      allMatches.push(m);
+  if (bracket) {
+    for (const r of bracket.rounds) {
+      for (const m of r.matches) {
+        allMatches.push(m);
+      }
     }
   }
 
@@ -107,7 +148,7 @@ export function TournamentBracketManager({
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ fontSize: 22 }}>🏆</span>
-            <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>{bracket.name}</h2>
+            <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>{event.name}</h2>
             <span
               style={{
                 fontSize: 11,
@@ -120,59 +161,246 @@ export function TournamentBracketManager({
                 color: "var(--primary)",
               }}
             >
-              {bracket.sport} · {format === "double_elimination" ? "Double Elimination" : "Single Elimination"}
+              {event.sport} · {bracket ? (bracket.format === "double_elimination" ? "Double Elimination" : "Single Elimination") : "No Bracket Generated"}
+            </span>
+            <span
+              style={{
+                fontSize: 11,
+                fontWeight: 600,
+                background: event.status === "published" ? "rgba(34, 197, 94, 0.12)" : "var(--panel-2)",
+                color: event.status === "published" ? "var(--ok)" : "var(--muted)",
+                padding: "2px 6px",
+                borderRadius: 4,
+                border: "1px solid var(--line)",
+              }}
+            >
+              {event.status}
             </span>
           </div>
           <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>
-            {format === "double_elimination"
-              ? "Winners & Losers Consolidation Engine · Teams: 8 · Guaranteed 2+ Games"
-              : `Single Elimination Tournament Engine · Registered Teams: ${bracket.teams.length}`}
+            {bracket
+              ? (bracket.format === "double_elimination"
+                  ? `Double Elimination Bracket · ${bracket.teams.length} Teams · Guaranteed 2+ Games · Persisted in PostgreSQL`
+                  : `Single Elimination Tournament Bracket · ${bracket.teams.length} Registered Teams · Persisted in PostgreSQL`)
+              : `Event Date: ${event.day}${event.location ? ` · ${event.location}` : ""} · Configure participating seeds below`}
           </div>
         </div>
 
-        {/* Format & View Switcher */}
-        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <div style={{ display: "flex", gap: 4, background: "var(--panel-2)", padding: 3, borderRadius: 6, border: "1px solid var(--line)" }}>
-            <button
-              type="button"
-              className={`btn small ${format === "single_elimination" ? "" : "ghost"}`}
-              onClick={() => handleFormatChange("single_elimination")}
-              style={{ fontSize: 11, padding: "3px 8px" }}
+        {/* Event selector & navigation */}
+        {allEvents.length > 1 && (
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span className="muted" style={{ fontSize: 12 }}>Switch Event:</span>
+            <select
+              defaultValue={event.id}
+              onChange={(e) => {
+                window.location.href = `/dashboard/events?event=${encodeURIComponent(e.target.value)}`;
+              }}
+              style={{
+                padding: "4px 8px",
+                fontSize: 12,
+                borderRadius: 6,
+                border: "1px solid var(--line)",
+                background: "var(--panel-2)",
+                color: "var(--text)",
+              }}
             >
-              Single Elim
-            </button>
-            <button
-              type="button"
-              className={`btn small ${format === "double_elimination" ? "" : "ghost"}`}
-              onClick={() => handleFormatChange("double_elimination")}
-              style={{ fontSize: 11, padding: "3px 8px" }}
-            >
-              Double Elim
-            </button>
+              {allEvents.map((ev) => (
+                <option key={ev.id} value={ev.id}>
+                  {ev.name} ({ev.sport})
+                </option>
+              ))}
+            </select>
           </div>
+        )}
 
-          <div style={{ display: "flex", gap: 6 }}>
-            <button
-              type="button"
-              className={`btn small ${activeTab === "bracket" ? "" : "ghost"}`}
-              onClick={() => setActiveTab("bracket")}
-            >
-              Bracket Tree
-            </button>
-            <button
-              type="button"
-              className={`btn small ${activeTab === "schedule" ? "" : "ghost"}`}
-              onClick={() => setActiveTab("schedule")}
-            >
-              Court Schedule
-            </button>
+        {/* View Switcher and Actions */}
+        {bracket && (
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <div style={{ display: "flex", gap: 6 }}>
+              <button
+                type="button"
+                className={`btn small ${activeTab === "bracket" ? "" : "ghost"}`}
+                onClick={() => setActiveTab("bracket")}
+              >
+                Bracket Tree
+              </button>
+              <button
+                type="button"
+                className={`btn small ${activeTab === "schedule" ? "" : "ghost"}`}
+                onClick={() => setActiveTab("schedule")}
+              >
+                Court Schedule ({allMatches.length})
+              </button>
+            </div>
+
+            {canManageScores && (
+              <form action={deleteBracketAction} style={{ display: "inline" }}>
+                <input type="hidden" name="event_id" value={event.id} />
+                <button
+                  type="submit"
+                  className="btn ghost small"
+                  style={{ color: "var(--err)", borderColor: "var(--line)", fontSize: 11 }}
+                  onClick={(e) => {
+                    if (!confirm("Are you sure you want to delete this tournament bracket? All recorded scores and match seeds will be cleared.")) {
+                      e.preventDefault();
+                    }
+                  }}
+                >
+                  Delete Bracket
+                </button>
+              </form>
+            )}
           </div>
-        </div>
+        )}
       </div>
 
+      {/* Bracket Creation Form (When No Bracket Exists for this Event) */}
+      {!bracket && (
+        <div style={{ padding: "8px 0" }}>
+          <div
+            style={{
+              background: "var(--panel-2)",
+              border: "1px solid var(--line)",
+              borderRadius: "var(--r)",
+              padding: 20,
+              maxWidth: 700,
+              margin: "0 auto",
+            }}
+          >
+            <h3 style={{ margin: "0 0 8px", fontSize: 16 }}>Initialize Official Tournament Bracket</h3>
+            <p className="muted" style={{ fontSize: 13, marginBottom: 16 }}>
+              Configure the tournament format and participating teams for <strong>{event.name}</strong>.
+              All seeded matchups and court assignments will be persisted directly to the database.
+            </p>
+
+            <form action={createOrResetBracketAction} style={{ display: "grid", gap: 16 }}>
+              <input type="hidden" name="event_id" value={event.id} />
+              <input type="hidden" name="format" value={createFormat} />
+              <input type="hidden" name="teams_json" value={JSON.stringify(setupTeams)} />
+
+              {/* Format selection */}
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 700, color: "var(--muted)", display: "block", marginBottom: 6 }}>
+                  TOURNAMENT FORMAT
+                </label>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button
+                    type="button"
+                    className={`btn small ${createFormat === "single_elimination" ? "" : "ghost"}`}
+                    onClick={() => setCreateFormat("single_elimination")}
+                    style={{ flex: 1, padding: "8px 12px" }}
+                  >
+                    🏆 Single Elimination
+                  </button>
+                  <button
+                    type="button"
+                    className={`btn small ${createFormat === "double_elimination" ? "" : "ghost"}`}
+                    onClick={() => setCreateFormat("double_elimination")}
+                    style={{ flex: 1, padding: "8px 12px" }}
+                  >
+                    🔄 Double Elimination (Consolation)
+                  </button>
+                </div>
+              </div>
+
+              {/* Team count selection */}
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 700, color: "var(--muted)", display: "block", marginBottom: 6 }}>
+                  BRACKET CAPACITY
+                </label>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button
+                    type="button"
+                    className={`btn small ${teamCount === 4 ? "" : "ghost"}`}
+                    onClick={() => handleTeamCountChange(4)}
+                    style={{ flex: 1 }}
+                  >
+                    4 Teams (Semifinals + Final)
+                  </button>
+                  <button
+                    type="button"
+                    className={`btn small ${teamCount === 8 ? "" : "ghost"}`}
+                    onClick={() => handleTeamCountChange(8)}
+                    style={{ flex: 1 }}
+                  >
+                    8 Teams (Quarterfinals + Semis + Final)
+                  </button>
+                </div>
+              </div>
+
+              {/* Seeded Team Roster */}
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 700, color: "var(--muted)", display: "block", marginBottom: 8 }}>
+                  SEEDED TEAMS & SEED NUMBERS
+                </label>
+                <div style={{ display: "grid", gap: 8 }}>
+                  {setupTeams.map((team, idx) => (
+                    <div
+                      key={team.seed}
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "50px 1fr 140px",
+                        gap: 8,
+                        alignItems: "center",
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 700,
+                          textAlign: "center",
+                          background: "var(--panel)",
+                          padding: "6px 8px",
+                          borderRadius: 4,
+                          border: "1px solid var(--line)",
+                        }}
+                      >
+                        #{team.seed}
+                      </span>
+                      <input
+                        type="text"
+                        value={team.name}
+                        onChange={(e) => handleTeamNameChange(idx, e.target.value)}
+                        placeholder={`Seed #${team.seed} Team Name`}
+                        required
+                        style={{
+                          padding: "6px 10px",
+                          borderRadius: 6,
+                          border: "1px solid var(--line)",
+                          background: "var(--panel)",
+                          color: "var(--text)",
+                          fontSize: 13,
+                        }}
+                      />
+                      <input
+                        type="text"
+                        value={team.city}
+                        onChange={(e) => handleTeamCityChange(idx, e.target.value)}
+                        placeholder="City / Region"
+                        style={{
+                          padding: "6px 10px",
+                          borderRadius: 6,
+                          border: "1px solid var(--line)",
+                          background: "var(--panel)",
+                          color: "var(--text)",
+                          fontSize: 13,
+                        }}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <button type="submit" className="btn" style={{ padding: "10px 16px", marginTop: 4 }}>
+                Generate & Save Official Tournament Bracket →
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Bracket Tree View */}
-      {activeTab === "bracket" && (
+      {bracket && activeTab === "bracket" && (
         <div
           style={{
             display: "grid",
@@ -384,7 +612,7 @@ export function TournamentBracketManager({
       )}
 
       {/* Court Schedule View */}
-      {activeTab === "schedule" && (
+      {bracket && activeTab === "schedule" && (
         <div>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
             <thead>
@@ -492,7 +720,10 @@ export function TournamentBracketManager({
               {scoringMatch.court} · {scoringMatch.scheduledTime}
             </div>
 
-            <form onSubmit={handleSaveScore} style={{ display: "grid", gap: 14 }}>
+            <form action={recordScoreAction} style={{ display: "grid", gap: 14 }}>
+              <input type="hidden" name="event_id" value={event.id} />
+              <input type="hidden" name="match_key" value={scoringMatch.id} />
+
               <div
                 style={{
                   display: "grid",
@@ -509,8 +740,9 @@ export function TournamentBracketManager({
                 </div>
                 <input
                   type="number"
+                  name="score_a"
                   min="0"
-                  max="300"
+                  max="999"
                   value={scoreA}
                   onChange={(e) => setScoreA(e.target.value)}
                   placeholder="0"
@@ -545,8 +777,9 @@ export function TournamentBracketManager({
                 </div>
                 <input
                   type="number"
+                  name="score_b"
                   min="0"
-                  max="300"
+                  max="999"
                   value={scoreB}
                   onChange={(e) => setScoreB(e.target.value)}
                   placeholder="0"
@@ -568,10 +801,11 @@ export function TournamentBracketManager({
               <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, marginTop: 4, cursor: "pointer" }}>
                 <input
                   type="checkbox"
+                  name="is_final"
                   checked={isFinal}
                   onChange={(e) => setIsFinal(e.target.checked)}
                 />
-                <span><strong>Game is Final</strong> (Winner automatically advances to next round)</span>
+                <span><strong>Game is Final</strong> (Winner automatically advances in database)</span>
               </label>
 
               <div style={{ display: "flex", gap: 8, marginTop: 8 }}>

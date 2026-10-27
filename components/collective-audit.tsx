@@ -98,29 +98,37 @@ const SAMPLE_GRANTS: DisbursementGrant[] = [
 ];
 
 export function CollectiveAuditSuite({
+  initialGrants,
   collectiveName = "Champions Student-Athlete Collective",
 }: {
+  initialGrants?: DisbursementGrant[];
   collectiveName?: string;
 }) {
-  const [grants, setGrants] = useState<DisbursementGrant[]>(SAMPLE_GRANTS);
+  const hasLive = Boolean(initialGrants && initialGrants.length > 0);
+  const [mode, setMode] = useState<"live" | "demo">(hasLive ? "live" : "live");
+  const [grants, setGrants] = useState<DisbursementGrant[]>(() =>
+    hasLive ? initialGrants! : []
+  );
   const [filter, setFilter] = useState<"all" | "compliant" | "action_required" | "flagged">("all");
   const [copiedCert, setCopiedCert] = useState<boolean>(false);
 
-  const health = calculateCollectiveHealth(grants);
+  const activeGrants = mode === "demo" ? SAMPLE_GRANTS : grants;
+  const health = calculateCollectiveHealth(activeGrants);
 
-  const filteredGrants = grants.filter((g) => {
+  const filteredGrants = activeGrants.filter((g) => {
     if (filter === "all") return true;
     return g.auditStatus === filter;
   });
 
   const handleApproveProof = (grantId: string) => {
+    if (mode === "demo") return;
     setGrants((prev) =>
       prev.map((g) =>
         g.id === grantId
           ? {
               ...g,
               proofVerified: true,
-              proofUrl: g.proofUrl ?? "https://proof.collective.org/verified-manual",
+              proofUrl: g.proofUrl ?? `/dashboard/deals/${g.id}`,
               auditStatus: "compliant",
               riskFlags: [],
             }
@@ -130,7 +138,14 @@ export function CollectiveAuditSuite({
   };
 
   const handleExportCertificate = () => {
-    const cert = generateAuditCertificate(collectiveName, health);
+    const rawCert = generateAuditCertificate(
+      mode === "demo" ? `${collectiveName} (PREVIEW DEMO)` : collectiveName,
+      health
+    );
+    const cert =
+      mode === "demo"
+        ? `[DEMO SANDBOX PREVIEW - NOT VALID COMPLIANCE PROOF]\n\n${rawCert}`
+        : rawCert;
     navigator.clipboard.writeText(cert);
     setCopiedCert(true);
     setTimeout(() => setCopiedCert(false), 2500);
@@ -186,16 +201,68 @@ export function CollectiveAuditSuite({
           </div>
         </div>
 
-        <button
-          type="button"
-          onClick={handleExportCertificate}
-          className="btn small"
-        >
-          {copiedCert ? "✓ Certificate Copied!" : "📜 Export NCAA Audit Certificate"}
-        </button>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <button
+            type="button"
+            className={`btn small ${mode === "demo" ? "" : "ghost"}`}
+            onClick={() => setMode((m) => (m === "live" ? "demo" : "live"))}
+            style={{ fontSize: 12 }}
+          >
+            {mode === "demo" ? "← Back to Live Grants" : "Sandbox Simulation"}
+          </button>
+          <button
+            type="button"
+            onClick={handleExportCertificate}
+            className="btn small"
+          >
+            {copiedCert ? "✓ Certificate Copied!" : "📜 Export NCAA Audit Certificate"}
+          </button>
+        </div>
       </div>
 
-      {/* KPI Cards */}
+      {mode === "demo" && (
+        <div
+          style={{
+            background: "rgba(234, 179, 8, 0.12)",
+            border: "1px solid rgba(234, 179, 8, 0.3)",
+            borderRadius: 6,
+            padding: "8px 12px",
+            marginBottom: 16,
+            fontSize: 12,
+            color: "var(--text)",
+          }}
+        >
+          <strong>⚠️ Sandbox Simulation (Sample Data):</strong> Displaying mock collective disbursements to demonstrate NCAA pay-for-play rule screenings, FMV threshold triggers, and proof verification gates.
+        </div>
+      )}
+
+      {mode === "live" && grants.length === 0 && (
+        <div
+          style={{
+            textAlign: "center",
+            padding: "36px 16px",
+            background: "var(--panel-2)",
+            borderRadius: 8,
+            border: "1px solid var(--line)",
+          }}
+        >
+          <span style={{ fontSize: 32 }}>🏛️</span>
+          <h3 style={{ margin: "10px 0 6px", fontSize: 16 }}>No Collective Disbursements On File</h3>
+          <p className="muted" style={{ margin: "0 0 16px", fontSize: 13 }}>
+            Active NIL agreements and submitted deliverable proof documents will automatically appear here for institutional audit certification.
+          </p>
+          <button
+            type="button"
+            className="btn small ghost"
+            onClick={() => setMode("demo")}
+          >
+            Explore Sandbox Simulation (Demo Grants) →
+          </button>
+        </div>
+      )}
+
+      {!(mode === "live" && grants.length === 0) && (
+        <>
       <div
         style={{
           display: "grid",
@@ -354,6 +421,8 @@ export function CollectiveAuditSuite({
           </tbody>
         </table>
       </div>
+      </>
+      )}
     </div>
   );
 }

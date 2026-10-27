@@ -178,3 +178,4 @@ COMPLIANCE ATTESTATION:
 All evaluated disbursements have been audited for Fair Market Value (FMV) adherence and verified genuine activity (charity appearances, youth clinics, and educational media). No payments were conditioned on athletic performance, scores, or university enrollment.
   `.trim();
 }
+

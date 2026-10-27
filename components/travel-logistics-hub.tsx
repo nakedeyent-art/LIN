@@ -8,6 +8,7 @@ import {
   type HotelBlock,
   type Chaperone,
   type PerDiemRecord,
+  type TripLogistics,
 } from "@/lib/travel-logistics";
 
 const DEFAULT_FLIGHTS: FlightSegment[] = [
@@ -98,20 +99,47 @@ const DEFAULT_PER_DIEM: PerDiemRecord[] = [
 ];
 
 export function TravelLogisticsHub({
-  tripName = "Atlanta National Showcase Road Trip",
-  destination = "Atlanta, GA",
+  initialTrip,
+  tripName = "Team & Athlete Travel Logistics",
+  destination = "Official Route",
 }: {
+  initialTrip?: TripLogistics | null;
   tripName?: string;
   destination?: string;
 }) {
+  const hasLive = Boolean(initialTrip);
+  const [mode, setMode] = useState<"live" | "demo">(hasLive ? "live" : "live");
   const [activeTab, setActiveTab] = useState<"flights" | "hotel" | "chaperones" | "per_diem">("flights");
-  const [chaperones, setChaperones] = useState<Chaperone[]>(DEFAULT_CHAPERONES);
-  const [perDiems, setPerDiems] = useState<PerDiemRecord[]>(DEFAULT_PER_DIEM);
 
-  const compliance = checkChaperoneCompliance(chaperones);
-  const perDiemTotals = calculatePerDiemTotals(perDiems);
+  const activeTripName = mode === "demo" ? "Atlanta National Showcase Road Trip" : initialTrip?.tripName || tripName;
+  const activeDestination = mode === "demo" ? "Atlanta, GA" : initialTrip?.destination || destination;
+
+  const flights = mode === "demo" ? DEFAULT_FLIGHTS : initialTrip?.flights ?? [];
+  const hotel = mode === "demo" ? DEFAULT_HOTEL : initialTrip?.hotelBlock ?? {
+    hotelName: "No hotel booked",
+    address: "—",
+    phone: "—",
+    checkInDate: "—",
+    checkOutDate: "—",
+    confirmationNumber: "—",
+    rooms: [],
+  };
+
+  const [chaperones, setChaperones] = useState<Chaperone[]>(() =>
+    initialTrip?.chaperones ?? DEFAULT_CHAPERONES
+  );
+  const [perDiems, setPerDiems] = useState<PerDiemRecord[]>(() =>
+    initialTrip?.perDiems ?? DEFAULT_PER_DIEM
+  );
+
+  const activeChaperones = mode === "demo" ? DEFAULT_CHAPERONES : chaperones;
+  const activePerDiems = mode === "demo" ? DEFAULT_PER_DIEM : perDiems;
+
+  const compliance = checkChaperoneCompliance(activeChaperones);
+  const perDiemTotals = calculatePerDiemTotals(activePerDiems);
 
   const toggleCheckIn = (chaperoneId: string) => {
+    if (mode === "demo") return;
     setChaperones((prev) =>
       prev.map((c) =>
         c.id === chaperoneId
@@ -128,6 +156,7 @@ export function TravelLogisticsHub({
   };
 
   const handleDisburseAll = () => {
+    if (mode === "demo") return;
     setPerDiems((prev) =>
       prev.map((p) => ({
         ...p,
@@ -163,7 +192,7 @@ export function TravelLogisticsHub({
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ fontSize: 22 }}>✈️</span>
-            <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>{tripName}</h2>
+            <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>{activeTripName}</h2>
             <span
               style={{
                 fontSize: 11,
@@ -176,22 +205,81 @@ export function TravelLogisticsHub({
                 border: "1px solid var(--line)",
               }}
             >
-              {destination} · Active Itinerary
+              {activeDestination} · {hasLive || mode === "demo" ? "Active Itinerary" : "No Stops Logged"}
             </span>
           </div>
           <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>
-            Team road trip coordinator: flights, hotel blocks, chaperone safety gates, and per diem tracking.
+            {mode === "demo"
+              ? "Sandbox Trip Simulation · 4 Roster Rooms · 3 Chaperones · Delta Flight DL 1482"
+              : hasLive
+              ? "Live Route Logistics from PostgreSQL · Transit, Accommodations & Contacts"
+              : "No stops or transit recorded on this travel route yet."}
           </div>
         </div>
 
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <button
+            type="button"
+            className={`btn small ${mode === "demo" ? "" : "ghost"}`}
+            onClick={() => setMode((m) => (m === "live" ? "demo" : "live"))}
+            style={{ fontSize: 12 }}
+          >
+            {mode === "demo" ? "← Back to Live Logistics" : "Sandbox Trip Simulation"}
+          </button>
+        </div>
+      </div>
+
+      {mode === "demo" && (
+        <div
+          style={{
+            background: "rgba(234, 179, 8, 0.12)",
+            border: "1px solid rgba(234, 179, 8, 0.3)",
+            borderRadius: 6,
+            padding: "8px 12px",
+            marginBottom: 16,
+            fontSize: 12,
+            color: "var(--text)",
+          }}
+        >
+          <strong>⚠️ Sandbox Simulation (Sample Trip Data):</strong> Displaying sample itinerary, room blocks, and chaperone rosters for demonstration purposes.
+        </div>
+      )}
+
+      {mode === "live" && !hasLive && (
+        <div
+          style={{
+            textAlign: "center",
+            padding: "36px 16px",
+            background: "var(--panel-2)",
+            borderRadius: 8,
+            border: "1px solid var(--line)",
+          }}
+        >
+          <span style={{ fontSize: 32 }}>🗺️</span>
+          <h3 style={{ margin: "10px 0 6px", fontSize: 16 }}>No Trip Logistics For Current Route</h3>
+          <p className="muted" style={{ margin: "0 0 16px", fontSize: 13 }}>
+            Select or create a route below and add stops, flight/bus transit details, and hotel bookings to activate live tracking.
+          </p>
+          <button
+            type="button"
+            className="btn small ghost"
+            onClick={() => setMode("demo")}
+          >
+            Explore Sandbox Itinerary (Demo Trip) →
+          </button>
+        </div>
+      )}
+
+      {!(mode === "live" && !hasLive) && (
+        <>
         {/* Tab buttons */}
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 16 }}>
           <button
             type="button"
             className={`btn small ${activeTab === "flights" ? "" : "ghost"}`}
             onClick={() => setActiveTab("flights")}
           >
-            🛫 Flights & Transit
+            🛫 Flights & Transit ({flights.length})
           </button>
           <button
             type="button"
@@ -215,12 +303,16 @@ export function TravelLogisticsHub({
             💵 Per Diem (${perDiemTotals.totalDisbursed})
           </button>
         </div>
-      </div>
 
       {/* Tab 1: Flights & Transit */}
       {activeTab === "flights" && (
         <div style={{ display: "grid", gap: 14 }}>
-          {DEFAULT_FLIGHTS.map((f, idx) => (
+          {flights.length === 0 ? (
+            <div className="muted" style={{ padding: 16, background: "var(--panel-2)", borderRadius: 6, fontSize: 13, textAlign: "center" }}>
+              No flight or transit stops logged for this trip yet.
+            </div>
+          ) : (
+            flights.map((f, idx) => (
             <div
               key={f.id}
               style={{
@@ -267,31 +359,33 @@ export function TravelLogisticsHub({
                 </div>
               </div>
             </div>
-          ))}
+          )))}
 
           {/* Ground Charter Card */}
-          <div
-            style={{
-              background: "var(--panel-2)",
-              border: "1px solid var(--line)",
-              borderRadius: 8,
-              padding: 14,
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-            }}
-          >
-            <div>
-              <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", color: "var(--muted)" }}>
-                Ground Charter Bus
+          {mode === "demo" && (
+            <div
+              style={{
+                background: "var(--panel-2)",
+                border: "1px solid var(--line)",
+                borderRadius: 8,
+                padding: 14,
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+              }}
+            >
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", color: "var(--muted)" }}>
+                  Ground Charter Bus
+                </div>
+                <div style={{ fontWeight: 700, fontSize: 14 }}>Atlanta Sprinter Team Shuttles (28-Passenger)</div>
+                <div className="muted" style={{ fontSize: 12 }}>Pickup at ATL Ground Transportation North Terminal · Driver: Tony R. (404-555-8812)</div>
               </div>
-              <div style={{ fontWeight: 700, fontSize: 14 }}>Atlanta Sprinter Team Shuttles (28-Passenger)</div>
-              <div className="muted" style={{ fontSize: 12 }}>Pickup at ATL Ground Transportation North Terminal · Driver: Tony R. (404-555-8812)</div>
+              <span style={{ fontSize: 11, fontWeight: 700, color: "var(--ok)", background: "rgba(34, 197, 94, 0.12)", padding: "4px 8px", borderRadius: 4 }}>
+                Confirmed
+              </span>
             </div>
-            <span style={{ fontSize: 11, fontWeight: 700, color: "var(--ok)", background: "rgba(34, 197, 94, 0.12)", padding: "4px 8px", borderRadius: 4 }}>
-              Confirmed
-            </span>
-          </div>
+          )}
         </div>
       )}
 
@@ -313,24 +407,29 @@ export function TravelLogisticsHub({
             }}
           >
             <div>
-              <div style={{ fontSize: 16, fontWeight: 800 }}>{DEFAULT_HOTEL.hotelName}</div>
-              <div className="muted" style={{ fontSize: 12 }}>{DEFAULT_HOTEL.address} · {DEFAULT_HOTEL.phone}</div>
+              <div style={{ fontSize: 16, fontWeight: 800 }}>{hotel.hotelName}</div>
+              <div className="muted" style={{ fontSize: 12 }}>{hotel.address} · {hotel.phone}</div>
               <div style={{ fontSize: 12, marginTop: 4 }}>
-                <strong>Check-In:</strong> {DEFAULT_HOTEL.checkInDate} | <strong>Check-Out:</strong> {DEFAULT_HOTEL.checkOutDate}
+                <strong>Check-In:</strong> {hotel.checkInDate} | <strong>Check-Out:</strong> {hotel.checkOutDate}
               </div>
             </div>
             <div style={{ textAlign: "right" }}>
               <div className="muted" style={{ fontSize: 11 }}>Group Res #</div>
-              <div style={{ fontFamily: "var(--mono)", fontWeight: 700, fontSize: 14 }}>{DEFAULT_HOTEL.confirmationNumber}</div>
+              <div style={{ fontFamily: "var(--mono)", fontWeight: 700, fontSize: 14 }}>{hotel.confirmationNumber}</div>
             </div>
           </div>
 
           <div style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", color: "var(--muted)", marginBottom: 8 }}>
-            Room Block & Roommate Assignments ({DEFAULT_HOTEL.rooms.length} Rooms Reserved)
+            Room Block & Roommate Assignments ({hotel.rooms.length} Rooms Reserved)
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
-            {DEFAULT_HOTEL.rooms.map((room) => (
+          {hotel.rooms.length === 0 ? (
+            <div className="muted" style={{ padding: 16, background: "var(--panel-2)", borderRadius: 6, fontSize: 13, textAlign: "center" }}>
+              No hotel room blocks or roommate assignments logged for this trip yet.
+            </div>
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
+              {hotel.rooms.map((room) => (
               <div
                 key={room.roomNumber}
                 style={{
@@ -365,6 +464,7 @@ export function TravelLogisticsHub({
               </div>
             ))}
           </div>
+          )}
         </div>
       )}
 
@@ -551,6 +651,8 @@ export function TravelLogisticsHub({
             </tbody>
           </table>
         </div>
+      )}
+      </>
       )}
     </div>
   );

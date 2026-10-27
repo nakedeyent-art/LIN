@@ -2,14 +2,16 @@ import { requireAccess } from "@/lib/session";
 import { Card, Disclaimer, Grid, List } from "@/components/ui";
 import { TaxEstimator } from "@/components/tax-estimator";
 import { CollectiveAuditSuite } from "@/components/collective-audit";
+import { loadRealCollectiveGrants } from "@/lib/collective-audit-server";
 
 export default async function Compliance() {
   await requireAccess("/dashboard/compliance");
+  const grants = await loadRealCollectiveGrants();
   return (
     <>
       <h1>Compliance & Financial Guardrails</h1>
       <div className="tag">Rules built into the product, not bolted on.</div>
-      <CollectiveAuditSuite />
+      <CollectiveAuditSuite initialGrants={grants} />
       <TaxEstimator />
 
       <Grid>
