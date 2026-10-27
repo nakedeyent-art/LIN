@@ -2,6 +2,12 @@ import { requireAccess } from "@/lib/session";
 import { Card, Disclaimer, Grid, List } from "@/components/ui";
 import { TaxEstimator } from "@/components/tax-estimator";
 import { CollectiveAuditSuite } from "@/components/collective-audit";
+import { StateEligibilityChecker } from "@/components/state-eligibility-checker";
+import { TaxEscrowCenter } from "@/components/tax-escrow-center";
+import { InstitutionalDisclosureHub } from "@/components/institutional-disclosure-hub";
+import { HouseRevSharingPortal } from "@/components/house-rev-sharing-portal";
+import { SocialFtcAuditor } from "@/components/social-ftc-auditor";
+import { VisaSafeHarborCard } from "@/components/visa-safe-harbor-card";
 import { loadRealCollectiveGrants } from "@/lib/collective-audit-server";
 
 export default async function Compliance() {
@@ -11,6 +17,12 @@ export default async function Compliance() {
     <>
       <h1>Compliance & Financial Guardrails</h1>
       <div className="tag">Rules built into the product, not bolted on.</div>
+      <StateEligibilityChecker />
+      <TaxEscrowCenter />
+      <InstitutionalDisclosureHub />
+      <HouseRevSharingPortal />
+      <SocialFtcAuditor />
+      <VisaSafeHarborCard />
       <CollectiveAuditSuite initialGrants={grants} />
       <TaxEstimator />
 
