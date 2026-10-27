@@ -7,6 +7,7 @@ import { displayName } from '@/lib/deals';
 import { saveScoutingTemplate,scoutingStage,scoutingFollowup } from './actions';
 import { ProspectComparator } from '@/components/prospect-comparator';
 import { VideoVault } from '@/components/video-vault';
+import { loadRecruiterVaultReels } from '@/lib/video-vault-server';
 
 export default async function Scouting({searchParams}:{searchParams:Promise<{error?:string;stage?:string;sport?:string}>}) {
  const s=await requireUser();if(s.role!=='recruiter')redirect('/dashboard');const p=await searchParams;
@@ -15,8 +16,9 @@ export default async function Scouting({searchParams}:{searchParams:Promise<{err
  const stages=[...new Set(['watching','evaluating','contacted','passed',...(await db().query('SELECT name FROM scouting_stages WHERE owner_id=$1 ORDER BY position,name',[s.userId])).rows.map(r=>r.name)])];
  const tasks=(await db().query('SELECT * FROM scouting_followups WHERE owner_id=$1 AND NOT done ORDER BY due_on LIMIT 100',[s.userId])).rows;
  const summaries=prospects.map(a=>({id:a.id,name:displayName(a.full_name,a.minor),sport:a.sport,position:a.position,level:a.level,gradYear:a.grad_year,stage:a.stage}));
+ const vaultReels=await loadRecruiterVaultReels(s.userId);
  return <><p className="eyebrow">Private recruiting</p><h1>Scouting workspace</h1><p className="tag">Your evaluations stay private. Athletes do not see your reports or pipeline.</p>{p.error&&<p className="error" role="alert">{p.error}</p>}<form className="filter-bar"><label>Stage<select name="stage" defaultValue={p.stage}><option value="">All stages</option>{stages.map(v=><option key={v}>{v}</option>)}</select></label><label>Sport<input type="text" name="sport" defaultValue={p.sport}/></label><button className="btn ghost">Filter</button></form><p><Link className="record-link" href="/dashboard/athletes">Find and track prospects →</Link></p>
- <VideoVault userRole={s.role} />
+ <VideoVault userRole={s.role} initialReels={vaultReels} />
  <ProspectComparator prospects={summaries}/>
 
  <div className="record-columns"><section className="work-panel"><h2>Prospect comparison</h2><table><thead><tr><th>Prospect</th><th>Sport / position</th><th>Level / class</th><th>Pipeline</th></tr></thead><tbody>{prospects.map(a=><tr key={a.id}><td><Link className="record-link" href={`/dashboard/scouting/${a.id}`}>{displayName(a.full_name,a.minor)}</Link></td><td>{a.sport} · {a.position??'—'}</td><td>{a.level.replaceAll('_',' ')} · {a.grad_year??'—'}</td><td><form action={scoutingStage}><input type="hidden" name="athlete_id" value={a.id}/><label className="sr-only" htmlFor={`stage-${a.id}`}>Stage</label><select id={`stage-${a.id}`} name="stage" defaultValue={a.stage}>{[...new Set([...stages,a.stage])].map(v=><option key={v}>{v}</option>)}</select><button className="btn ghost">Save</button></form></td></tr>)}</tbody></table>{!prospects.length&&<p className="empty-state">No visible prospects match this view.</p>}</section><aside className="activity-rail"><h2>Follow-ups</h2>{tasks.map(t=><form key={t.id} action={scoutingFollowup}><input type="hidden" name="followup_id" value={t.id}/><p>{t.title}<br/>{new Date(t.due_on).toISOString().slice(0,10)}</p><button className="btn ghost">Mark done</button></form>)}{!tasks.length&&<p className="muted">No outstanding follow-ups.</p>}</aside></div>
