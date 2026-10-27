@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import {
+  createVideoClip,
   filterClipsBySkill,
   generateRecruiterShareToken,
   type HighlightReel,
@@ -122,9 +123,39 @@ export function VideoVault({
   const [activeClipId, setActiveClipId] = useState<string>(reels[0]?.clips[0]?.id ?? "");
   const [copiedLink, setCopiedLink] = useState<boolean>(false);
 
+  // Recruiter custom clip markers
+  const [extraClips, setExtraClips] = useState<Record<string, VideoClip[]>>({});
+  const [showAddClip, setShowAddClip] = useState<boolean>(false);
+  const [newTimestamp, setNewTimestamp] = useState<string>("01:30");
+  const [newTitle, setNewTitle] = useState<string>("");
+  const [newCategory, setNewCategory] = useState<SkillCategory>("Shooting & Shot Creation");
+  const [newDesc, setNewDesc] = useState<string>("");
+  const [newRating, setNewRating] = useState<number>(4);
+
   const activeReel = reels.find((r) => r.id === selectedReelId) ?? reels[0];
-  const filteredClips = activeReel ? filterClipsBySkill(activeReel.clips, selectedSkill) : [];
-  const activeClip = activeReel ? (activeReel.clips.find((c) => c.id === activeClipId) ?? activeReel.clips[0]) : null;
+  const allReelClips = activeReel ? [...activeReel.clips, ...(extraClips[activeReel.id] || [])] : [];
+  const filteredClips = filterClipsBySkill(allReelClips, selectedSkill);
+  const activeClip = allReelClips.find((c) => c.id === activeClipId) ?? allReelClips[0] ?? null;
+
+  const handleAddClip = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeReel || !newTitle.trim()) return;
+    const clip = createVideoClip({
+      timestamp: newTimestamp,
+      title: newTitle,
+      skillCategory: newCategory,
+      description: newDesc,
+      rating: newRating,
+    });
+    setExtraClips((prev) => ({
+      ...prev,
+      [activeReel.id]: [...(prev[activeReel.id] || []), clip],
+    }));
+    setActiveClipId(clip.id);
+    setNewTitle("");
+    setNewDesc("");
+    setShowAddClip(false);
+  };
 
   const skillOptions: SkillCategory[] = [
     "All Skills",
@@ -468,6 +499,112 @@ export function VideoVault({
                 </div>
               );
             })}
+          </div>
+
+          {/* Recruiter Clip Marker Action */}
+          <div style={{ marginTop: 10 }}>
+            {!showAddClip ? (
+              <button
+                type="button"
+                className="btn small ghost"
+                onClick={() => setShowAddClip(true)}
+                style={{ width: "100%", fontSize: 12, justifyContent: "center" }}
+              >
+                + Drop Timestamp Marker & Tag Skill
+              </button>
+            ) : (
+              <form
+                onSubmit={handleAddClip}
+                style={{
+                  background: "var(--panel-2)",
+                  border: "1px solid var(--primary)",
+                  borderRadius: 6,
+                  padding: 12,
+                  display: "grid",
+                  gap: 8,
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <strong style={{ fontSize: 12 }}>Tag Film Sequence</strong>
+                  <button
+                    type="button"
+                    className="muted"
+                    onClick={() => setShowAddClip(false)}
+                    style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14 }}
+                  >
+                    ✕
+                  </button>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 8 }}>
+                  <label style={{ fontSize: 11 }}>
+                    Timestamp (mm:ss)
+                    <input
+                      type="text"
+                      value={newTimestamp}
+                      onChange={(e) => setNewTimestamp(e.target.value)}
+                      placeholder="01:30"
+                      required
+                      style={{ width: "100%", marginTop: 2, padding: "4px 6px", fontSize: 12 }}
+                    />
+                  </label>
+                  <label style={{ fontSize: 11 }}>
+                    Clip Title
+                    <input
+                      type="text"
+                      value={newTitle}
+                      onChange={(e) => setNewTitle(e.target.value)}
+                      placeholder="e.g. Catch & Shoot 3PT"
+                      required
+                      style={{ width: "100%", marginTop: 2, padding: "4px 6px", fontSize: 12 }}
+                    />
+                  </label>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 8 }}>
+                  <label style={{ fontSize: 11 }}>
+                    Skill Category
+                    <select
+                      value={newCategory}
+                      onChange={(e) => setNewCategory(e.target.value as SkillCategory)}
+                      style={{ width: "100%", marginTop: 2, padding: "4px 6px", fontSize: 12 }}
+                    >
+                      {skillOptions.filter((s) => s !== "All Skills").map((s) => (
+                        <option key={s} value={s}>{s}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label style={{ fontSize: 11 }}>
+                    Scout Rating (1-5)
+                    <select
+                      value={newRating}
+                      onChange={(e) => setNewRating(Number(e.target.value))}
+                      style={{ width: "100%", marginTop: 2, padding: "4px 6px", fontSize: 12 }}
+                    >
+                      {[5, 4, 3, 2, 1].map((n) => (
+                        <option key={n} value={n}>{n} Stars</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <label style={{ fontSize: 11 }}>
+                  Observation & Evaluation Notes
+                  <textarea
+                    rows={2}
+                    value={newDesc}
+                    onChange={(e) => setNewDesc(e.target.value)}
+                    placeholder="Scouting evaluation on footwork, mechanics, decision..."
+                    style={{ width: "100%", marginTop: 2, padding: "4px 6px", fontSize: 12 }}
+                  />
+                </label>
+                <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                  <button type="button" className="btn small ghost" onClick={() => setShowAddClip(false)} style={{ fontSize: 11 }}>
+                    Cancel
+                  </button>
+                  <button type="submit" className="btn small" style={{ fontSize: 11 }}>
+                    Save Marker
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
 
           {/* Recruiter Projection Box */}

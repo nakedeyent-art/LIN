@@ -128,3 +128,91 @@ export function checkChaperoneCompliance(chaperones: Chaperone[]): {
   };
 }
 
+export function generateTravelCalendarIcs(trip: TripLogistics): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const toIcsDate = (dateStr: string, fallbackOffsetHours = 0) => {
+    const d = new Date(dateStr);
+    const valid = !isNaN(d.getTime()) ? d : new Date(Date.now() + fallbackOffsetHours * 3600 * 1000);
+    return `${valid.getUTCFullYear()}${pad(valid.getUTCMonth() + 1)}${pad(valid.getUTCDate())}T${pad(valid.getUTCHours())}${pad(valid.getUTCMinutes())}${pad(valid.getUTCSeconds())}Z`;
+  };
+
+  const lines: string[] = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//LIN NIL Travel Logistics Hub//EN",
+    "CALSCALE:GREGORIAN",
+    "METHOD:PUBLISH",
+    `X-WR-CALNAME:${trip.tripName} Itinerary`,
+  ];
+
+  // Flight events
+  trip.flights.forEach((f, idx) => {
+    lines.push("BEGIN:VEVENT");
+    lines.push(`UID:flight-${f.id || idx}-${trip.tripId}@lin-nil.com`);
+    lines.push(`SUMMARY:${f.airline} ${f.flightNumber}: ${f.departureAirport} → ${f.arrivalAirport}`);
+    lines.push(`LOCATION:${f.departureAirport} Airport`);
+    lines.push(
+      `DESCRIPTION:Confirmation: ${f.confirmationCode}\\nTerminal: ${f.terminal || "Main"}\\nGate: ${f.gate || "TBD"}`
+    );
+    lines.push(`DTSTART:${toIcsDate(f.departureTime, 0)}`);
+    lines.push(`DTEND:${toIcsDate(f.arrivalTime, 3)}`);
+    lines.push("END:VEVENT");
+  });
+
+  // Hotel block event
+  if (trip.hotelBlock && trip.hotelBlock.hotelName) {
+    lines.push("BEGIN:VEVENT");
+    lines.push(`UID:hotel-${trip.tripId}@lin-nil.com`);
+    lines.push(`SUMMARY:Hotel Check-In: ${trip.hotelBlock.hotelName}`);
+    lines.push(`LOCATION:${trip.hotelBlock.address}`);
+    lines.push(
+      `DESCRIPTION:Reservation: ${trip.hotelBlock.confirmationNumber}\\nPhone: ${trip.hotelBlock.phone}\\nRooms: ${trip.hotelBlock.rooms.length} blocks booked`
+    );
+    lines.push(`DTSTART:${toIcsDate(trip.hotelBlock.checkInDate, 15)}`);
+    lines.push(`DTEND:${toIcsDate(trip.hotelBlock.checkOutDate, 39)}`);
+    lines.push("END:VEVENT");
+  }
+
+  lines.push("END:VCALENDAR");
+  return lines.join("\r\n");
+}
+
+export function generateItinerarySummaryText(trip: TripLogistics): string {
+  const flightsText = trip.flights.length > 0
+    ? trip.flights.map((f) => `  - ${f.airline} ${f.flightNumber} (${f.departureAirport} → ${f.arrivalAirport}) Conf: ${f.confirmationCode} Dept: ${f.departureTime}`).join("\n")
+    : "  - Ground transportation / local travel";
+
+  const roomsText = trip.hotelBlock?.rooms?.length > 0
+    ? trip.hotelBlock.rooms.map((r) => `  - Room ${r.roomNumber} (${r.roomType}): ${r.occupants.join(", ") || "Unassigned"}`).join("\n")
+    : "  - Standard team room block";
+
+  const chaperonesText = trip.chaperones.length > 0
+    ? trip.chaperones.map((c) => `  - ${c.fullName} (${c.relationship}) - Tel: ${c.phone} [${c.backgroundChecked ? "Verified" : "Pending"}]`).join("\n")
+    : "  - Team coaching staff on site";
+
+  return `
+========================================
+TEAM TRAVEL ITINERARY: ${trip.tripName.toUpperCase()}
+Destination: ${trip.destination}
+Dates: ${trip.startDate} - ${trip.endDate}
+========================================
+
+FLIGHT TRANSIT & SCHEDULE:
+${flightsText}
+
+ACCOMMODATIONS & ROOMING:
+Hotel: ${trip.hotelBlock?.hotelName || "TBD"}
+Address: ${trip.hotelBlock?.address || "TBD"} | Tel: ${trip.hotelBlock?.phone || "—"}
+Confirmation #: ${trip.hotelBlock?.confirmationNumber || "TBD"}
+Room Assignments:
+${roomsText}
+
+SAFETY CHAPERONES & CONTACTS:
+${chaperonesText}
+
+PER DIEM SUMMARY:
+Total Athlete Records: ${trip.perDiems.length}
+========================================
+`.trim();
+}
+

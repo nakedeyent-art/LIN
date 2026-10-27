@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  createVideoClip,
   filterClipsBySkill,
   formatTimestamp,
   generateRecruiterShareToken,
@@ -75,4 +76,24 @@ describe("Film & Video Highlight Vault", () => {
       expect(isShareTokenValid("nil_film_bad_payload")).toBe(false);
     });
   });
+
+  describe("Clip Marker Creation", () => {
+    it("creates a timestamped VideoClip with correct seconds and formatted timestamp", () => {
+      const clip = createVideoClip({
+        timestamp: "03:15",
+        title: "Weakside Help Defense",
+        skillCategory: "On-Ball Defense",
+        description: "Rotated over early to alter layup without fouling",
+        rating: 5,
+      });
+
+      expect(clip.timestamp).toBe("03:15");
+      expect(clip.seconds).toBe(195);
+      expect(clip.title).toBe("Weakside Help Defense");
+      expect(clip.skillCategory).toBe("On-Ball Defense");
+      expect(clip.rating).toBe(5);
+      expect(clip.id).toMatch(/^clip-/);
+    });
+  });
 });
+

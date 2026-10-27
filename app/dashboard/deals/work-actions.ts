@@ -6,6 +6,9 @@ import { validId } from '@/lib/operations';
 import { capacityOn } from '@/lib/dealsdb';
 import { paymentsEnabled } from '@/lib/stripe';
 import { screenText } from '@/lib/content-filter';
+import { createHash } from 'node:crypto';
+import { checkUploads } from '@/lib/attachments';
+
 export async function saveDealWork(form:FormData) {
  const s=await requireUser(),dealId=String(form.get('deal_id')??''),id=String(form.get('item_id')??''),action=String(form.get('action')??'');if(!validId(dealId)||(id&&!validId(id)))redirect('/dashboard/deals');
  const back=`/dashboard/deals/${dealId}?tab=deliverables`,c=await db().connect();
@@ -23,7 +26,20 @@ export async function saveDealWork(form:FormData) {
    const item=(await c.query('SELECT * FROM deal_work_items WHERE id=$1 AND deal_id=$2 FOR UPDATE',[id,dealId])).rows[0];if(!item)throw new Error('Deliverable not found.');
    if(action==='submit'){
     if(who==='counterparty'||item.status==='accepted')throw new Error('Only the athlete or guardian can submit unfinished proof.');
-    const attachment=String(form.get('attachment_id')??'');if(!validId(attachment)||!(await c.query('SELECT 1 FROM deal_attachments a JOIN deal_messages m ON m.id=a.message_id WHERE a.id=$1 AND a.deal_id=$2 AND m.hidden_at IS NULL',[attachment,dealId])).rowCount)throw new Error('Upload proof in Messages, then select that attachment.');
+    let attachment=String(form.get('attachment_id')??'');
+    const file=form.get('proof_file') as File | null;
+    if(file && file.size > 0){
+     const bytes=new Uint8Array(await file.arrayBuffer());
+     const have=(await c.query("SELECT count(*)::int AS n FROM deal_attachments WHERE deal_id=$1",[dealId])).rows[0].n as number;
+     const checked=checkUploads([{ name: file.name, bytes }], have);
+     if(!checked.ok)throw new Error(checked.error);
+     const f=checked.files[0];
+     const mid=(await c.query("INSERT INTO deal_messages(deal_id, sender_id, body) VALUES ($1,$2,$3) RETURNING id",[dealId,s.userId,`[Deliverable proof uploaded for "${item.title}"]`])).rows[0].id as string;
+     const ins=(await c.query("INSERT INTO deal_attachments(message_id, deal_id, uploader_id, filename, content_type, size_bytes, sha256, data) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id",[mid,dealId,s.userId,f.filename,f.type,f.bytes.length,createHash("sha256").update(f.bytes).digest("hex"),Buffer.from(f.bytes)]));
+     attachment=ins.rows[0].id as string;
+    }else{
+     if(!validId(attachment)||!(await c.query('SELECT 1 FROM deal_attachments a JOIN deal_messages m ON m.id=a.message_id WHERE a.id=$1 AND a.deal_id=$2 AND m.hidden_at IS NULL',[attachment,dealId])).rowCount)throw new Error('Directly attach a file (PNG, JPG, PDF) or select an existing message attachment.');
+    }
     await c.query("UPDATE deal_work_items SET status='submitted',attachment_id=$2,updated_at=now() WHERE id=$1",[id,attachment]);
    }else if(['accepted','changes_requested'].includes(action)){
     if(who!=='counterparty'||item.status!=='submitted')throw new Error('Only the counterparty can review submitted proof.');await c.query('UPDATE deal_work_items SET status=$2,updated_at=now() WHERE id=$1',[id,action]);

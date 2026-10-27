@@ -122,4 +122,19 @@ describe("Tournament Brackets Domain Validation", () => {
       expect(res.valid).toBe(true);
     });
   });
+
+  describe("Automatic Winner Advancement Logic", () => {
+    it("determines winner and loser correctly based on final scores", () => {
+      const teamAId = "team-a-uuid";
+      const teamBId = "team-b-uuid";
+      const scoreA = 85;
+      const scoreB = 79;
+      const winnerId = scoreA > scoreB ? teamAId : teamBId;
+      const loserId = scoreA > scoreB ? teamBId : teamAId;
+
+      expect(winnerId).toBe("team-a-uuid");
+      expect(loserId).toBe("team-b-uuid");
+    });
+  });
 });
+

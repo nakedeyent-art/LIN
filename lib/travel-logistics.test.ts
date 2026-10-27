@@ -3,6 +3,8 @@ import {
   assignRoommates,
   calculatePerDiemTotals,
   checkChaperoneCompliance,
+  generateTravelCalendarIcs,
+  generateItinerarySummaryText,
   type Chaperone,
   type PerDiemRecord,
 } from "./travel-logistics";
@@ -112,4 +114,77 @@ describe("Team & Athlete Travel Logistics", () => {
       expect(res.unverifiedCount).toBe(0);
     });
   });
+
+  describe("Itinerary & Calendar Exports", () => {
+    const sampleTrip = {
+      tripId: "trip-99",
+      tripName: "National Showcase Tour",
+      destination: "Atlanta, GA",
+      startDate: "2026-11-10",
+      endDate: "2026-11-13",
+      flights: [
+        {
+          id: "f1",
+          airline: "Delta Air Lines",
+          flightNumber: "DL 1482",
+          departureAirport: "JFK",
+          arrivalAirport: "ATL",
+          departureTime: "2026-11-10T08:00:00Z",
+          arrivalTime: "2026-11-10T10:45:00Z",
+          confirmationCode: "DL-982X1A",
+          terminal: "4",
+          gate: "B22",
+        },
+      ],
+      hotelBlock: {
+        hotelName: "Omni Atlanta Hotel",
+        address: "100 CNN Center NW, Atlanta, GA",
+        phone: "(404) 659-0000",
+        checkInDate: "2026-11-10",
+        checkOutDate: "2026-11-13",
+        confirmationNumber: "HTL-OMNI-774",
+        rooms: [
+          {
+            roomNumber: "201",
+            roomType: "Double Queen" as const,
+            occupants: ["Marcus Johnson", "Jordan Bell"],
+            capacity: 2,
+          },
+        ],
+      },
+      chaperones: [
+        {
+          id: "c1",
+          fullName: "David Johnson",
+          phone: "555-0199",
+          email: "david@example.com",
+          relationship: "Parent of Marcus Johnson",
+          backgroundChecked: true,
+          assignedAthletes: ["Marcus Johnson"],
+          checkedIn: true,
+        },
+      ],
+      perDiems: [],
+    };
+
+    it("generates valid RFC 5545 iCalendar content", () => {
+      const ics = generateTravelCalendarIcs(sampleTrip);
+      expect(ics).toContain("BEGIN:VCALENDAR");
+      expect(ics).toContain("VERSION:2.0");
+      expect(ics).toContain("SUMMARY:Delta Air Lines DL 1482: JFK → ATL");
+      expect(ics).toContain("LOCATION:JFK Airport");
+      expect(ics).toContain("SUMMARY:Hotel Check-In: Omni Atlanta Hotel");
+      expect(ics).toContain("END:VCALENDAR");
+    });
+
+    it("generates clean formatted text itinerary for printable travel packets", () => {
+      const text = generateItinerarySummaryText(sampleTrip);
+      expect(text).toContain("TEAM TRAVEL ITINERARY: NATIONAL SHOWCASE TOUR");
+      expect(text).toContain("Delta Air Lines DL 1482 (JFK → ATL)");
+      expect(text).toContain("Hotel: Omni Atlanta Hotel");
+      expect(text).toContain("Room 201 (Double Queen): Marcus Johnson, Jordan Bell");
+      expect(text).toContain("David Johnson (Parent of Marcus Johnson)");
+    });
+  });
 });
+

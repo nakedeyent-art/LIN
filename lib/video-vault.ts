@@ -78,3 +78,24 @@ export function isShareTokenValid(token: string): boolean {
     return false;
   }
 }
+
+export function createVideoClip(input: {
+  timestamp: string;
+  title: string;
+  skillCategory: SkillCategory;
+  description: string;
+  rating?: number;
+}): VideoClip {
+  const seconds = parseTimestamp(input.timestamp);
+  const formattedTs = formatTimestamp(seconds);
+  return {
+    id: `clip-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    timestamp: formattedTs,
+    seconds,
+    title: input.title.trim() || "Untagged Sequence",
+    skillCategory: input.skillCategory,
+    description: input.description.trim(),
+    rating: input.rating && input.rating >= 1 && input.rating <= 5 ? Math.round(input.rating) : 3,
+  };
+}
+

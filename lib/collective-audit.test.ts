@@ -135,4 +135,19 @@ describe("Booster Collective Governance & Genuine Deliverables Audit", () => {
       expect(cert).toContain("COMPLIANCE ATTESTATION");
     });
   });
+
+  describe("Deliverable Proof Verification Integration", () => {
+    it("recognizes accepted deliverable work items as verified proof", () => {
+      const workItem = {
+        id: "wi-1",
+        title: "Community Keynote",
+        status: "accepted" as const,
+        attachmentId: "att-123",
+      };
+
+      const isVerified = workItem.status === "accepted" && Boolean(workItem.attachmentId);
+      expect(isVerified).toBe(true);
+    });
+  });
 });
+

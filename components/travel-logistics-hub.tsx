@@ -4,6 +4,8 @@ import { useState } from "react";
 import {
   calculatePerDiemTotals,
   checkChaperoneCompliance,
+  generateTravelCalendarIcs,
+  generateItinerarySummaryText,
   type FlightSegment,
   type HotelBlock,
   type Chaperone,
@@ -166,6 +168,54 @@ export function TravelLogisticsHub({
     );
   };
 
+  const handleDownloadIcs = () => {
+    const tripToExport: TripLogistics = {
+      tripId: initialTrip?.tripId || "route-itinerary",
+      tripName: activeTripName,
+      destination: activeDestination,
+      startDate: initialTrip?.startDate || new Date().toISOString().slice(0, 10),
+      endDate: initialTrip?.endDate || new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10),
+      flights,
+      hotelBlock: hotel,
+      chaperones,
+      perDiems,
+    };
+    const ics = generateTravelCalendarIcs(tripToExport);
+    const blob = new Blob([ics], { type: "text/calendar;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${activeTripName.toLowerCase().replace(/[^a-z0-9]/g, "_")}.ics`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleDownloadSummary = () => {
+    const tripToExport: TripLogistics = {
+      tripId: initialTrip?.tripId || "route-itinerary",
+      tripName: activeTripName,
+      destination: activeDestination,
+      startDate: initialTrip?.startDate || new Date().toISOString().slice(0, 10),
+      endDate: initialTrip?.endDate || new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10),
+      flights,
+      hotelBlock: hotel,
+      chaperones,
+      perDiems,
+    };
+    const summary = generateItinerarySummaryText(tripToExport);
+    const blob = new Blob([summary], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${activeTripName.toLowerCase().replace(/[^a-z0-9]/g, "_")}_itinerary.txt`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div
       style={{
@@ -217,7 +267,29 @@ export function TravelLogisticsHub({
           </div>
         </div>
 
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          {(hasLive || mode === "demo") && (
+            <>
+              <button
+                type="button"
+                className="btn small ghost"
+                onClick={handleDownloadIcs}
+                title="Download iCalendar file (.ics) for Apple Calendar, Google Calendar, and Outlook"
+                style={{ fontSize: 12 }}
+              >
+                📅 Export iCal (.ics)
+              </button>
+              <button
+                type="button"
+                className="btn small ghost"
+                onClick={handleDownloadSummary}
+                title="Download printable itinerary summary"
+                style={{ fontSize: 12 }}
+              >
+                📄 Print Itinerary
+              </button>
+            </>
+          )}
           <button
             type="button"
             className={`btn small ${mode === "demo" ? "" : "ghost"}`}
