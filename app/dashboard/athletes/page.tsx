@@ -5,6 +5,7 @@ import { canOffer, displayName, type Level } from "@/lib/deals";
 import { BLOCKED_SQL } from "@/lib/blocksdb";
 import { trackAthlete } from "./actions";
 import { Card, Disclaimer, Grid } from "@/components/ui";
+import { DigitalNilPassCard } from "@/components/digital-nil-pass-card";
 
 export default async function Athletes({ searchParams }: { searchParams: Promise<{ sport?: string }> }) {
   const s = await requireAccess("/dashboard/athletes");
@@ -22,8 +23,9 @@ export default async function Athletes({ searchParams }: { searchParams: Promise
       ORDER BY u.full_name LIMIT 100`, [sport, s.userId]);
   return (
     <>
-      <h1>Find Athletes</h1>
-      <div className="tag">Athletes who chose to be listed.</div>
+      <h1>Find Athletes & Verified NIL Passes</h1>
+      <div className="tag">Athletes who chose to be listed with cryptographically verified credentials.</div>
+      <DigitalNilPassCard />
       <form method="get" style={{ marginBottom: 16 }}>
         <input type="text" name="sport" placeholder="Filter by sport (exact)" defaultValue={sport} style={{ maxWidth: 260 }} />{" "}
         <button className="btn ghost" type="submit">Filter</button>

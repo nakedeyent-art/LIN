@@ -10,6 +10,7 @@ import { DealTable } from "@/components/deal-ui";
 import { unreadByDeal } from "@/lib/messagesdb";
 import { setDiscoverable } from "./actions";
 import { CampaignMarketplace } from "@/components/campaign-marketplace";
+import { CampaignDispatcherHub } from "@/components/campaign-dispatcher-hub";
 
 export default async function DealsPage({ searchParams }: { searchParams: Promise<{ error?: string; msg?: string }> }) {
   const s = await requireAccess("/dashboard/deals");
@@ -33,6 +34,7 @@ export default async function DealsPage({ searchParams }: { searchParams: Promis
       {msg && <p className="ok">{msg}</p>}
       {error && <p role="alert" className="error">{error}</p>}
       {needs > 0 && <p className="ok">{needs} deal{needs > 1 ? "s" : ""} waiting for your decision or signature.</p>}
+      <CampaignDispatcherHub />
       <CampaignMarketplace viewerRole={s.role} />
       <Grid>
         {canPaid && (
