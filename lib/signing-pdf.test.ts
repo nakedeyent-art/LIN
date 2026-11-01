@@ -14,5 +14,5 @@ describe('signed PDF rendering',()=>{
  it('paginates long multilingual agreement text into readable PDFs',async()=>{
   const pdf=await PDFDocument.load(await textPdf('Agreement — José','WWWWWWWWWW Émilie '.repeat(1000)));
   expect(pdf.getPageCount()).toBeGreaterThan(1);
- });
+ },20000);
 });

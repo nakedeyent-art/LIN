@@ -15,6 +15,7 @@ import { formatBps } from "@/lib/money";
 import { Badge, Card as OriginalCard, Disclaimer, Grid, List, RecordSheet, Steps } from "@/components/ui";
 import { athleteLabel, StatusBadge } from "@/components/deal-ui";
 import { unreadByDeal } from "@/lib/messagesdb";
+import { DeliverableProofHub, type DeliverableWorkItemUI } from "@/components/deliverable-proof-hub";
 import { dealAction } from "../actions";
 import { claimPayee, fundDeal } from "../payment-actions";
 
@@ -91,7 +92,39 @@ export default async function DealDetail({ params, searchParams }: {
       <Grid>
         <Card title="Progress" wide><Steps steps={steps} /></Card>
         <Card title="Deliverables" wide>
-          <h4>Operational checklist</h4><p className="muted">Checklist items coordinate delivery and do not amend the signed agreement. Approving proof does not release payment.</p>
+          <DeliverableProofHub
+            dealId={d.id}
+            dealTitle={d.title}
+            sponsorName={d.counterparty_name ?? "Brand Partner"}
+            amountCents={d.amount_cents}
+            isMinor={Boolean(d.athlete_minor)}
+            escrowFunded={Boolean(pay && ["funded", "releasing", "released"].includes(pay.status))}
+            viewerRole={who}
+            initialWorkItems={
+              workItems.length > 0
+                ? workItems.map((item) => ({
+                    id: String(item.id),
+                    title: String(item.title),
+                    dueOn: new Date(item.due_on).toISOString().slice(0, 10),
+                    status: (["pending", "submitted", "accepted", "changes_requested"].includes(item.status)
+                      ? item.status
+                      : "pending") as DeliverableWorkItemUI["status"],
+                    attachmentId: item.attachment_id ? String(item.attachment_id) : undefined,
+                    filename: item.filename ?? undefined,
+                  }))
+                : [
+                    {
+                      id: `deal-item-${d.id}`,
+                      title: d.deliverables || "Sponsored Social Media Campaign Deliverables",
+                      dueOn: d.expires_at
+                        ? new Date(d.expires_at).toISOString().slice(0, 10)
+                        : new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10),
+                      status: (d.status === "completed" ? "accepted" : "pending") as DeliverableWorkItemUI["status"],
+                    },
+                  ]
+            }
+          />
+          <h4 style={{ marginTop: 24 }}>Operational checklist</h4><p className="muted">Checklist items coordinate delivery and do not amend the signed agreement. Approving proof does not release payment.</p>
           <table><thead><tr><th>Item</th><th>Due</th><th>Status / proof</th><th>Action</th></tr></thead><tbody>{workItems.map(item=><tr key={item.id}><td>{item.title}</td><td>{new Date(item.due_on).toISOString().slice(0,10)}</td><td>{item.status.replaceAll('_',' ')}{item.attachment_id&&proofOptions.some(a=>a.id===item.attachment_id)&&<p><a className="record-link" href={`/dashboard/deals/${id}/attachments/${item.attachment_id}`}>{item.filename}</a></p>}</td><td>{who==='counterparty'&&item.status==='submitted'?<form action={saveDealWork}><input type="hidden" name="deal_id" value={id}/><input type="hidden" name="item_id" value={item.id}/><button className="btn ghost" name="action" value="accepted">Accept proof</button><button className="btn ghost" name="action" value="changes_requested">Request changes</button></form>:who!=='counterparty'&&item.status!=='accepted'?<form action={saveDealWork} encType="multipart/form-data" style={{display:'flex',flexDirection:'column',gap:4}}><input type="hidden" name="deal_id" value={id}/><input type="hidden" name="item_id" value={item.id}/><input type="hidden" name="action" value="submit"/><label style={{fontSize:11}}>Upload file proof<input type="file" name="proof_file" accept=".png,.jpg,.jpeg,.pdf"/></label>{proofOptions.length>0&&<label style={{fontSize:11}}>Or select message file<select name="attachment_id"><option value="">-- Choose existing --</option>{proofOptions.map(a=><option key={a.id} value={a.id}>{a.filename}</option>)}</select></label>}<button className="btn ghost small" style={{marginTop:4}}>Submit proof</button></form>:null}</td></tr>)}</tbody></table>
           <p><Link className="record-link" href={`/dashboard/deals/${id}/messages`}>Upload performance evidence in Messages →</Link></p>
           {who==='counterparty'&&['active','awaiting_signature'].includes(d.status)&&<details><summary>Add checklist item</summary><form className="operation-form" action={saveDealWork}><input type="hidden" name="deal_id" value={id}/><input type="hidden" name="action" value="create"/><label>Deliverable<input type="text" name="title" maxLength={200} required/></label><label>Deadline<input type="date" name="due_on" required/></label><button className="btn ghost">Add deliverable</button></form></details>}
