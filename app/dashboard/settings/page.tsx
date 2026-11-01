@@ -15,6 +15,7 @@ import {
   cancelEmailChange, changePassword, deleteAccount, requestEmailChange, signOutOthers, updateEmailPrefs, updateProfile,
 } from "./actions";
 import { RateCardKit } from "@/components/rate-card-kit";
+import { SessionSecurityCenter } from "@/components/session-security-center";
 
 const stack = { display: "grid", gap: 8, maxWidth: 420 } as const;
 const fmt = (d: Date) => new Date(d).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
@@ -119,10 +120,19 @@ export default async function Settings({ searchParams }: { searchParams: Promise
           {events.length > 0 && <><h4>Recent security activity</h4><ul className="list">{events.map((e, i) => <li key={i}>{SECURITY_LABEL[e.action]} · {fmt(e.created_at)}</li>)}</ul></>}
         </Card>
 
-        <Card title="Where you're signed in">
+        <Card title="Where you're signed in" wide>
           <table><tbody>{sessions.rows.map((r, i) => (
             <tr key={i}><td>Started {fmt(r.created_at)}</td><td>Expires {fmt(r.expires_at)}</td><td>{r.current && <Badge tone="green">this device</Badge>}</td></tr>))}</tbody></table>
           {sessions.rows.length > 1 && <form action={signOutOthers} style={{ marginTop: 8 }}><button className="btn ghost" type="submit">Sign out all other devices</button></form>}
+          <SessionSecurityCenter
+            rawSessions={sessions.rows.map((r) => ({
+              current: Boolean(r.current),
+              created_at: new Date(r.created_at).toISOString(),
+              expires_at: new Date(r.expires_at).toISOString(),
+            }))}
+            mfaEnrolled={mfaOn}
+            passkeyCount={passkeys.length}
+          />
         </Card>
 
         <Card title="Your data">

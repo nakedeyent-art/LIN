@@ -5,6 +5,7 @@ import { grownAthletesOf, minorsGuardedBy } from "@/lib/guardians";
 import { GuardianPanel, MyGuardiansPanel } from "./guardian-panel";
 import { Badge, Card, Disclaimer, Grid } from "@/components/ui";
 import { inviteMember, removeMember, revokeInvite } from "./actions";
+import { ProfessionalCredentialCenter } from "@/components/professional-credential-center";
 
 const sel = { padding: 10, borderRadius: 8, border: "1px solid var(--line)", background: "var(--panel)", color: "var(--text)" } as const;
 
@@ -31,6 +32,7 @@ export default async function TeamPage({ searchParams }: { searchParams: Promise
       <div className="tag">Choose who can see an athlete&apos;s academics, nutrition and training. Nothing is shared by default.</div>
       {msg && <p className="ok">{msg}</p>}
       {error && <p role="alert" className="error">{error}</p>}
+      <ProfessionalCredentialCenter viewerRole={s.role} viewerName={s.name} />
       {blocks.length === 0 && guarded.length === 0 && grown.length === 0 && <p className="muted">No athletes to manage yet.</p>}
       {grown.map((g) => (
         <Grid key={g.id}><Card title={`${g.name} is now an adult`} wide>

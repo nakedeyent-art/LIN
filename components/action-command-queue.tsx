@@ -13,11 +13,73 @@ export interface ActionQueueItem {
   href: string;
   ctaText: string;
   badgeText: string;
+  isLiveRecord?: boolean;
+}
+
+export interface LiveNeedsItemInput {
+  key: string;
+  kind: "signature" | "deal";
+  title: string;
+  detail: string;
+  href: string;
+  cta: string;
+}
+
+export interface LiveTaskInput {
+  id: string;
+  title: string;
+  due_at: Date | string;
+  athlete_id: string;
+}
+
+export function buildActionQueueItems(
+  viewerRole: string,
+  liveNeeds: LiveNeedsItemInput[] = [],
+  liveTasks: LiveTaskInput[] = []
+): ActionQueueItem[] {
+  const mappedNeeds: ActionQueueItem[] = liveNeeds.map((n) => ({
+    id: n.key,
+    category: n.kind === "signature" ? "contract_signature" : "deal_approval",
+    urgency: "high",
+    title: n.title,
+    subtitle: n.detail,
+    href: n.href,
+    ctaText: n.cta,
+    badgeText: n.kind === "signature" ? "Live Signature" : "Live Decision",
+    isLiveRecord: true,
+  }));
+
+  const mappedTasks: ActionQueueItem[] = liveTasks.map((t) => {
+    const dueDate = new Date(t.due_at);
+    const isOverdue = dueDate.getTime() < Date.now();
+    return {
+      id: `task-${t.id}`,
+      category: "academic_gate",
+      urgency: isOverdue ? "high" : "medium",
+      title: t.title,
+      subtitle: `${isOverdue ? "Overdue" : "Due"} · ${dueDate.toISOString().slice(0, 10)}`,
+      dueDate: dueDate.toISOString().slice(0, 10),
+      href: `/dashboard/tasks?athlete=${t.athlete_id}`,
+      ctaText: "Open Task",
+      badgeText: isOverdue ? "Overdue Task" : "Task Due",
+      isLiveRecord: true,
+    };
+  });
+
+  const defaults = SAMPLE_ACTION_ITEMS[viewerRole] || SAMPLE_ACTION_ITEMS.athlete;
+  const seenIds = new Set([...mappedNeeds.map((i) => i.id), ...mappedTasks.map((i) => i.id)]);
+  return [
+    ...mappedNeeds,
+    ...mappedTasks,
+    ...defaults.filter((d) => !seenIds.has(d.id)),
+  ];
 }
 
 interface ActionCommandQueueProps {
   viewerRole: string;
   items?: ActionQueueItem[];
+  liveNeeds?: LiveNeedsItemInput[];
+  liveTasks?: LiveTaskInput[];
 }
 
 export const SAMPLE_ACTION_ITEMS: Record<string, ActionQueueItem[]> = {
@@ -122,9 +184,12 @@ export const SAMPLE_ACTION_ITEMS: Record<string, ActionQueueItem[]> = {
   ],
 };
 
-export function ActionCommandQueue({ viewerRole, items }: ActionCommandQueueProps) {
+export function ActionCommandQueue({ viewerRole, items, liveNeeds = [], liveTasks = [] }: ActionCommandQueueProps) {
   const [filter, setFilter] = useState<"all" | "high">("all");
-  const displayItems = items && items.length > 0 ? items : SAMPLE_ACTION_ITEMS[viewerRole] || SAMPLE_ACTION_ITEMS.athlete;
+  const displayItems =
+    items && items.length > 0
+      ? items
+      : buildActionQueueItems(viewerRole, liveNeeds, liveTasks);
 
   const filtered = filter === "high" ? displayItems.filter((i) => i.urgency === "high") : displayItems;
 

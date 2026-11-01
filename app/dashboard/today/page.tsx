@@ -31,7 +31,7 @@ export default async function Today() {
   return <>
     <PageHead eyebrow={new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'UTC' }).format(new Date()) + ' · UTC'} title="Today" tag="Decisions waiting on you first, then games, tasks and conversations." />
     {['athlete', 'manager', 'trainer'].includes(s.role) && <WellnessCheckin athleteName={athletes[0]?.name ?? s.name} />}
-    <ActionCommandQueue viewerRole={s.role} />
+    <ActionCommandQueue viewerRole={s.role} liveNeeds={pending} liveTasks={tasks.rows} />
     <div className="feed">
       <FeedSection needs={pending.length > 0} id="needs-you">Needs you{pending.length ? ` · ${pending.length}` : ''}</FeedSection>
       {pending.length

@@ -16,6 +16,7 @@ import { Badge, Card as OriginalCard, Disclaimer, Grid, List, RecordSheet, Steps
 import { athleteLabel, StatusBadge } from "@/components/deal-ui";
 import { unreadByDeal } from "@/lib/messagesdb";
 import { DeliverableProofHub, type DeliverableWorkItemUI } from "@/components/deliverable-proof-hub";
+import { DealNegotiationHub } from "@/components/deal-negotiation-hub";
 import { dealAction } from "../actions";
 import { claimPayee, fundDeal } from "../payment-actions";
 
@@ -142,6 +143,17 @@ export default async function DealDetail({ params, searchParams }: {
           <Card title="Agreement" wide>
             <p>{k.voidedAt ? <Badge tone="red">Voided</Badge> : k.executedAt ? <Badge tone="green">Fully executed {fmt(k.executedAt)}</Badge> : <Badge tone="yellow">Awaiting signatures</Badge>}{" "}
               <span className="muted">{k.signatures.length === 0 ? "No one has signed yet." : `Signed by ${k.signatures.map((x) => x.typedName).join(", ")}.`}</span></p>
+            <DealNegotiationHub
+              dealId={d.id}
+              dealTitle={d.title}
+              initialAmountCents={d.amount_cents}
+              initialDeliverables={d.deliverables ?? ""}
+              sponsorName={d.counterparty_name ?? "Sponsor"}
+              athleteName={d.athlete_name ?? "Athlete"}
+              isMinor={Boolean(d.athlete_minor)}
+              viewerRole={who}
+              dealStatus={d.status}
+            />
             <p><Link className="btn" href={`/dashboard/deals/${d.id}/contract`}>{sign?.ok ? "Review & sign" : "View agreement"}</Link>{" "}
               <a className="btn ghost" href={`/dashboard/deals/${d.id}/contract/download`}>Download (.txt)</a></p>
             {who === "guardian" && d.status === "awaiting_signature" && <p className="muted">The agreement names the athlete by their full legal name and you sign on their behalf.</p>}
