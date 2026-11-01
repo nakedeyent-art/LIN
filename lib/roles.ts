@@ -25,14 +25,15 @@ const events = { href: "/dashboard/events", label: "Events" };
 const home = { href: "/dashboard", label: "Home" };
 const feed = { href: "/dashboard/feed", label: "Feed" };
 const news = { href: "/dashboard/news", label: "News" };
+const safety = { href: "/dashboard/safety", label: "Family Safety" };
 
 export const ROLES: Record<Role, RoleConfig> = {
   athlete: { id: "athlete", label: "Athlete", accent: "#f97316",
     tagline: "Your brand, your development, your deals.",
-    nav: [home, feed, news, deals, dev.training, dev.nutrition, dev.academics, team, dev.compliance] },
+    nav: [home, feed, news, deals, dev.training, dev.nutrition, dev.academics, team, safety, dev.compliance] },
   parent: { id: "parent", label: "Parent / Guardian", accent: "#14b8a6",
     tagline: "Approve deals, protect eligibility, stay informed.",
-    nav: [home, feed, news, deals, dev.academics, dev.nutrition, dev.training, team, dev.compliance] },
+    nav: [home, feed, news, deals, safety, dev.academics, dev.nutrition, dev.training, team, dev.compliance] },
   coach: { id: "coach", label: "Coach", accent: "#3b82f6",
     tagline: "Roster readiness and NIL-compliant program visibility.",
     nav: [home, feed, news, dev.academics, dev.training, dev.compliance] },
