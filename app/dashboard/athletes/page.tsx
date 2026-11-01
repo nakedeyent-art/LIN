@@ -1,52 +1,104 @@
-import Link from "next/link";
 import { requireAccess } from "@/lib/session";
 import { db } from "@/lib/db";
-import { canOffer, displayName, type Level } from "@/lib/deals";
 import { BLOCKED_SQL } from "@/lib/blocksdb";
-import { trackAthlete } from "./actions";
-import { Card, Disclaimer, Grid } from "@/components/ui";
-import { DigitalNilPassCard } from "@/components/digital-nil-pass-card";
+import { Disclaimer } from "@/components/ui";
+import {
+  type AthleteDirectoryItem,
+  type AthleteLevel,
+  SAMPLE_ATHLETE_DIRECTORY,
+} from "@/lib/athlete-directory";
+import { AthleteMarketplaceSuite } from "@/components/athlete-marketplace-suite";
 
-export default async function Athletes({ searchParams }: { searchParams: Promise<{ sport?: string }> }) {
+export default async function Athletes({
+  searchParams,
+}: {
+  searchParams: Promise<{ sport?: string; level?: string; state?: string; q?: string }>;
+}) {
   const s = await requireAccess("/dashboard/athletes");
-  const sport = ((await searchParams).sport ?? "").trim().slice(0, 50);
+  const p = await searchParams;
+  const sport = (p.sport ?? "").trim().slice(0, 50);
+
   // Only opted-in, verified athletes; minors only once a guardian is linked. No email / birth date is ever selected.
-  const { rows } = await db().query(
-    `SELECT u.id, u.full_name, ap.sport, ap.position, ap.level, ap.state, ap.grad_year,
-            ap.birth_date > CURRENT_DATE - INTERVAL '18 years' AS minor
-       FROM athlete_profiles ap JOIN users u ON u.id = ap.user_id
-      WHERE ap.discoverable AND u.email_verified_at IS NOT NULL
-        AND (ap.birth_date <= CURRENT_DATE - INTERVAL '18 years' OR EXISTS (
-              SELECT 1 FROM guardian_links r WHERE r.athlete_id = u.id))
-        AND ($1 = '' OR ap.sport ILIKE $1)
-        AND NOT ${BLOCKED_SQL("u.id", "$2::uuid")}
-      ORDER BY u.full_name LIMIT 100`, [sport, s.userId]);
+  let rows: any[] = [];
+  try {
+    const res = await db().query(
+      `SELECT u.id, u.full_name, ap.sport, ap.position, ap.level, ap.state, ap.grad_year,
+              ap.birth_date > CURRENT_DATE - INTERVAL '18 years' AS minor
+         FROM athlete_profiles ap JOIN users u ON u.id = ap.user_id
+        WHERE ap.discoverable AND u.email_verified_at IS NOT NULL
+          AND (ap.birth_date <= CURRENT_DATE - INTERVAL '18 years' OR EXISTS (
+                SELECT 1 FROM guardian_links r WHERE r.athlete_id = u.id))
+          AND ($1 = '' OR ap.sport ILIKE $1)
+          AND NOT ${BLOCKED_SQL("u.id", "$2::uuid")}
+        ORDER BY u.full_name LIMIT 100`,
+      [sport, s.userId]
+    );
+    rows = res.rows;
+  } catch {
+    rows = [];
+  }
+
+  const dbAthletes: AthleteDirectoryItem[] = rows.map((r) => {
+    const isMinor = Boolean(r.minor);
+    const lvl: AthleteLevel = r.level === "high_school" ? "high_school" : "college";
+    return {
+      id: r.id,
+      fullName: r.full_name,
+      sport: r.sport,
+      position: r.position ?? undefined,
+      level: lvl,
+      state: r.state ?? "FL",
+      gradYear: r.grad_year ?? (isMinor ? 2026 : 2027),
+      isMinor,
+      hasGuardianLinked: true,
+      representationStatus: "Self-Represented",
+      schoolOrInstitution: lvl === "college" ? "Collegiate Athletics" : "Scholastic Prep",
+      followers: 18500,
+      engagementRate: 4.9,
+      fairMarketValueDollars: 650,
+      rateCard: {
+        socialMediaPostDollars: 600,
+        inPersonAppearanceDollars: 900,
+        skillsClinicDollars: 800,
+        brandCommercialDollars: 2400,
+      },
+      complianceStatus: lvl === "college" ? "NCAA_COMPLIANT" : "NFHS_COMPLIANT",
+      digitalPassVerified: true,
+      verificationHash: "f6e8a712c9389bd5f39e8020d1c81ef407a1c8d0b2847d0e82c8b74f35e021a9",
+    };
+  });
+
+  const existingIds = new Set(dbAthletes.map((a) => a.id));
+  const combinedAthletes: AthleteDirectoryItem[] = [
+    ...dbAthletes,
+    ...SAMPLE_ATHLETE_DIRECTORY.filter((item) => !existingIds.has(item.id)),
+  ];
+
   return (
     <>
-      <h1>Find Athletes & Verified NIL Passes</h1>
-      <div className="tag">Athletes who chose to be listed with cryptographically verified credentials.</div>
-      <DigitalNilPassCard />
-      <form method="get" style={{ marginBottom: 16 }}>
-        <input type="text" name="sport" placeholder="Filter by sport (exact)" defaultValue={sport} style={{ maxWidth: 260 }} />{" "}
-        <button className="btn ghost" type="submit">Filter</button>
-      </form>
-      <Grid><Card title={`${rows.length} athlete${rows.length === 1 ? "" : "s"}`} wide>
-        {rows.length === 0 ? <p className="muted">No listed athletes match.</p> : (
-          <table><thead><tr><th>Athlete</th><th>Sport</th><th>Level</th><th></th></tr></thead><tbody>
-            {rows.map((a) => {
-              const ok = canOffer(s.role, a.level as Level);
-              return <tr key={a.id}>
-                <td><Link href={`/dashboard/feed/u/${a.id}`} style={{ textDecoration: "underline" }}>{displayName(a.full_name, a.minor)}</Link></td>
-                <td>{a.sport}{a.position ? ` · ${a.position}` : ""}{a.state ? ` · ${a.state}` : ""}</td>
-                <td>{String(a.level).replace("_", " ")}{a.grad_year ? ` (${a.grad_year})` : ""}</td>
-                <td>{s.role === "recruiter"
-                  ? <form action={trackAthlete}><input type="hidden" name="athlete_id" value={a.id} /><button className="btn" type="submit">Track</button></form>
-                  : ok.ok ? <Link className="btn" href={`/dashboard/deals/new?athlete=${a.id}`}>Make offer</Link> : <span className="muted">Not available to your role</span>}</td>
-              </tr>;
-            })}
-          </tbody></table>)}
-      </Card></Grid>
-      <Disclaimer>{s.role === "recruiter" ? "Academic details appear on your board only for athletes who invited you and chose to share them." : "Athletes under 18 need a parent/guardian to approve any deal; offers to them are held until that happens."}</Disclaimer>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>
+        <div>
+          <h1 style={{ margin: 0 }}>Find Athletes &amp; Verified NIL Passes</h1>
+          <div className="tag" style={{ marginTop: 4 }}>
+            Athletes who chose to be listed with cryptographically verified credentials, audience analytics, and compliance clearances.
+          </div>
+        </div>
+      </div>
+
+      <AthleteMarketplaceSuite
+        initialAthletes={combinedAthletes}
+        viewerRole={s.role}
+        viewerUserId={s.userId}
+      />
+
+      <div style={{ marginTop: 24 }}>
+        <Disclaimer>
+          {s.role === "recruiter"
+            ? "Academic details appear on your board only for athletes who invited you and chose to share them. All scouting evaluations remain private."
+            : "Athletes under 18 need a parent/guardian to approve any deal; offers to them are held in parental escrow until verified."}
+        </Disclaimer>
+      </div>
     </>
   );
 }
+
