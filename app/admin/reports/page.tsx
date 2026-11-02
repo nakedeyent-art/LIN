@@ -2,6 +2,7 @@ import Link from "next/link";
 import { reportQueue } from "@/lib/admindb";
 import { REASON_LABEL, type ReportReason } from "@/lib/reports";
 import { Badge, Card } from "@/components/ui";
+import { ScopedModerationCenter } from "@/components/scoped-moderation-center";
 
 const fmt = (x: Date) => new Date(x).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
 
@@ -12,6 +13,7 @@ export default async function AdminReports({ searchParams }: { searchParams: Pro
     <>
       <h1>Message reports</h1>
       <p><Link className="btn ghost" href="/admin/reports">Open</Link> <Link className="btn ghost" href="/admin/reports?show=resolved">Resolved</Link></p>
+      <ScopedModerationCenter />
       <Card title={`${rows.length} ${resolved ? "resolved" : "open"}`} wide>
         {rows.length === 0 ? <p className="muted">Nothing here.</p> : <table><thead><tr><th>Reported</th><th>Reason</th><th>Message from</th><th>Reported by</th><th></th></tr></thead>
           <tbody>{rows.map((r) => <tr key={r.id}><td>{fmt(r.created_at)}</td>
