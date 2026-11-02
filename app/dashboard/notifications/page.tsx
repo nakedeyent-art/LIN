@@ -4,6 +4,7 @@ import { listNotifications } from "@/lib/notificationsdb";
 import { KIND_LABEL, NOTIFICATION_RETENTION_DAYS } from "@/lib/notifications";
 import { Badge, Card } from "@/components/ui";
 import { markAllNotificationsRead, openNotification } from "./actions";
+import { NotificationDigestCenter } from "@/components/notification-digest-center";
 
 export const metadata: Metadata = { title: "Notifications" };
 const fmt = (x: Date) => new Date(x).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
@@ -16,6 +17,7 @@ export default async function Notifications() {
     <>
       <h1>Notifications</h1>
       <div className="tag">What changed on your deals, payments, messages and family links.</div>
+      <NotificationDigestCenter />
       <Card title={unread ? `${unread} unread` : "All caught up"} wide>
         {unread > 0 && <form action={markAllNotificationsRead}><button className="btn ghost" type="submit">Mark all as read</button></form>}
         {items.length === 0 ? <p className="muted">Nothing yet.</p> : (
