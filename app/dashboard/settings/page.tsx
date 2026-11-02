@@ -16,6 +16,7 @@ import {
 } from "./actions";
 import { RateCardKit } from "@/components/rate-card-kit";
 import { SessionSecurityCenter } from "@/components/session-security-center";
+import { DataPrivacyExportCenter } from "@/components/data-privacy-center";
 
 const stack = { display: "grid", gap: 8, maxWidth: 420 } as const;
 const fmt = (d: Date) => new Date(d).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
@@ -135,9 +136,9 @@ export default async function Settings({ searchParams }: { searchParams: Promise
           />
         </Card>
 
-        <Card title="Your data">
+        <Card title="Your data" wide>
           <p>Download a copy of the information tied to your account (profile, grades, meals, workouts, deals, team).</p>
-          <form action="/dashboard/settings/export" method="post"><button className="btn ghost" type="submit">Download my data (JSON)</button></form>
+          <DataPrivacyExportCenter userRole={s.role} />
         </Card>
 
         <Card title="Delete account" wide>
