@@ -5,6 +5,7 @@ import { Badge, Card, Disclaimer, Grid } from "@/components/ui";
 import { EVENT_STATUSES } from "@/lib/events";
 import { TournamentBracketManager, type EventSummary } from "@/components/tournament-bracket";
 import { getTournamentBracketByEventId } from "@/lib/tournament-brackets";
+import { MultiAthleteRosterCenter } from "@/components/multi-athlete-roster-center";
 import { createEvent, setEventStatus } from "./actions";
 
 export default async function Events({
@@ -30,6 +31,11 @@ export default async function Events({
       <div className="tag">Create and manage your tournaments, brackets, and court schedules.</div>
       {q.msg && <p className="ok">{q.msg}</p>}
       {q.error && <p role="alert" className="error">{q.error}</p>}
+
+      <MultiAthleteRosterCenter
+        eventName={selectedEvent?.name}
+        userRole={s.role}
+      />
 
       <TournamentBracketManager
         event={selectedEvent}

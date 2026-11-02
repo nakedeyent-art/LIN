@@ -2,6 +2,7 @@ import { requireUser } from "@/lib/session";
 import { organizationsFor } from "@/lib/organizations";
 import { db } from "@/lib/db";
 import { archiveOrganization, createOrganization, inviteOrganizationMember, leaveOrganization, removeOrganizationMember, respondOrganizationInvite, revokeOrganizationInvite, setOrganizationRole } from "./actions";
+import { OrgGovernanceCenter } from "@/components/org-governance-center";
 
 const when = (d: Date) => new Date(d).toLocaleDateString("en-US", { dateStyle: "medium", timeZone: "UTC" });
 
@@ -16,6 +17,7 @@ export default async function Organizations({ searchParams }: { searchParams: Pr
       <p className="eyebrow">Shared operations</p><h1>Organizations</h1>
       <p className="tag">Membership organizes records. Athlete consent and document permissions still apply independently.</p>
       {p.error && <p role="alert" className="error">{p.error}</p>}{p.msg && <p className="ok">{p.msg}</p>}
+      <OrgGovernanceCenter currentUserId={s.userId} />
       {invites.map((i) => (
         <section key={i.id} className="work-panel"><h2>{i.name} invited you</h2><p className="muted">Open until {when(i.expires_at)}.</p>
           <form action={respondOrganizationInvite}><input type="hidden" name="invite_id" value={i.id} />
